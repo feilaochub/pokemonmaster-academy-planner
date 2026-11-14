@@ -75,8 +75,29 @@ test('principal rewards repeat across rounds after skipping or claiming', () => 
   P.undo(s); P.validate(s); assert.equal(s.stock.red, 0); assert.equal(P.totals(s).tm.current, 1); assert.equal(s.round, 3);
 });
 
-test('other fixed rewards still reject repeat claims', () => {
-  for (const type of ['blue', 'kukui', 'midterm', 'final', 'red']) {
+test('ordinary fixed rewards repeat across rounds, preserving receipts, reload and undo', () => {
+  for (const [type, gain, silver] of [
+    ['red', { ...P.vector(), yellow: 420 }, 0],
+    ['blue', P.vector(400), 0],
+    ['kukui', { ...P.vector(), blue: 252 }, 1]
+  ]) {
+    const s = P.defaults(); s.boost = 'B';
+    P.recordChoice(s, npc(type)); P.recordChoice(s, npc(type));
+    const expected = Object.fromEntries(P.colors.map(c => [c, gain[c] * 2]));
+    assert.deepEqual(s.stock, expected); assert.equal(s.round, 3); assert.equal(P.totals(s).tm.current, silver * 2);
+    const receipts = structuredClone(s.ledger), loaded = P.upgrade(JSON.parse(JSON.stringify(s)));
+    assert.deepEqual(loaded.stock, expected); assert.deepEqual(loaded.ledger, receipts);
+    loaded.boost = 'C'; P.calibrate(loaded, P.vector(10));
+    assert.deepEqual(P.totals(loaded).earned, expected); assert.deepEqual(loaded.ledger.slice(0, 2), receipts);
+    P.undo(loaded); P.undo(loaded); P.validate(loaded);
+    assert.deepEqual(loaded.stock, gain); assert.equal(loaded.round, 2); assert.equal(P.totals(loaded).tm.current, silver);
+    loaded.round = 1; const before = structuredClone(loaded);
+    assert.throws(() => P.recordChoice(loaded, npc(type)), /本回合已有/); assert.deepEqual(loaded, before);
+  }
+});
+
+test('exams still reject repeat claims', () => {
+  for (const type of ['midterm', 'final']) {
     const s = P.defaults(), first = npc(type), second = npc(type, { round: 2 });
     s.candidates.push(first, second); P.claim(s, first.id);
     const before = structuredClone(s);
