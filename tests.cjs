@@ -65,10 +65,23 @@ test('round-scoped recommendations and claim prevent future choices', () => {
   const s = P.defaults(), n = npc('blue', { round: 2 }); s.candidates.push(n);
   assert.equal(P.rank(s).length, 0); assert.throws(() => P.claim(s, n.id)); s.round = 2; assert.equal(P.rank(s).length, 1);
 });
-test('principal may reappear after skipping; claimed fixed reward cannot repeat', () => {
+test('principal rewards repeat across rounds after skipping or claiming', () => {
   const s = P.defaults(), first = npc('principal', { status: 'skipped' }), second = npc('principal', { round: 2 });
   s.candidates.push(first, second); P.validate(s); s.round = 2; P.claim(s, second.id); P.validate(s);
-  const third = npc('principal', { round: 3 }); s.candidates.push(third); s.round = 3; assert.throws(() => P.claim(s, third.id));
+  const third = npc('principal', { round: 3, colors: ['red'] }); s.candidates.push(third); P.claim(s, third.id); P.validate(s);
+  assert.deepEqual(s.stock, { red: 315, green: 0, blue: 315, yellow: 0 });
+  assert.equal(P.totals(s).tm.current, 2); assert.equal(s.round, 4);
+  assert.throws(() => P.claim(s, third.id));
+  P.undo(s); P.validate(s); assert.equal(s.stock.red, 0); assert.equal(P.totals(s).tm.current, 1); assert.equal(s.round, 3);
+});
+
+test('other fixed rewards still reject repeat claims', () => {
+  for (const type of ['blue', 'kukui', 'midterm', 'final', 'red']) {
+    const s = P.defaults(), first = npc(type), second = npc(type, { round: 2 });
+    s.candidates.push(first, second); P.claim(s, first.id);
+    const before = structuredClone(s);
+    assert.throws(() => P.claim(s, second.id), /本轮已经领取过此项固定奖励/); assert.deepEqual(s, before);
+  }
 });
 test('rounding per color; fractional values stable', () => {
   const s = P.defaults(), n = npc('battle3', { colors: ['red', 'blue', 'yellow'] }); s.boost = 'custom'; s.customMultiplier = 2.1;
@@ -413,6 +426,39 @@ test('new rounding and fixed exam migration never recalculate old floor receipts
   P.undo(upgraded); assert.deepEqual(upgraded.stock, stock); P.validate(upgraded);
 });
 const Share = require('./dist/share.js');
+
+test('repeated principal confirmations keep receipts, count every silver and survive reload and undo', () => {
+  const s = P.defaults(); s.boost = 'C';
+  for (const color of P.colors) P.recordChoice(s, npc('principal', { colors: [color] }));
+  assert.equal(s.round, 5); assert.deepEqual(s.stock, P.vector(189)); assert.equal(s.tmStock, 4);
+  assert.deepEqual(P.totals(s).tm, { current: 4, target: 3, gap: 0, surplus: 1 });
+  assert.equal(Share.summary(s).silver, 4); assert.equal(Share.summary(s).total, 756);
+  assert.equal(P.evaluate(s, npc('principal')).tmUseful, 0);
+  const receipts = structuredClone(s.ledger);
+  s.round = 4; const before = structuredClone(s);
+  assert.throws(() => P.recordChoice(s, npc('principal')), /本回合已有/); assert.deepEqual(s, before); s.round = 5;
+  s.boost = 'A'; P.calibrate(s, P.vector(20), undefined, 100);
+  assert.equal(P.totals(s).tm.current, 4); assert.equal(Share.summary(s).total, 756);
+  const loaded = P.upgrade(JSON.parse(JSON.stringify(s)));
+  assert.deepEqual(loaded.ledger.slice(0, 4), receipts); assert.deepEqual(loaded.stock, P.vector(20));
+  assert.equal(Share.summary(loaded).silver, 4);
+  P.undo(loaded); assert.equal(P.totals(loaded).tm.current, 4);
+  P.undo(loaded); P.validate(loaded); assert.equal(P.totals(loaded).tm.current, 3);
+  assert.equal(Share.summary(loaded).total, 567); assert.equal(loaded.stock.yellow, 0); assert.equal(loaded.round, 4);
+});
+
+test('legacy repeated principal records infer silver per receipt without rewriting snapshots', () => {
+  const s = P.defaults();
+  for (let i = 0; i < 3; i++) P.recordChoice(s, npc('principal'));
+  delete s.tmStock; delete s.tmTarget;
+  for (const row of s.ledger) { delete row.tmBefore; delete row.tmAfter; delete row.tmGain; }
+  const receipts = structuredClone(s.ledger), stock = { ...s.stock };
+  const loaded = P.upgrade(JSON.parse(JSON.stringify(s)));
+  assert.deepEqual(loaded.ledger, receipts); assert.deepEqual(loaded.stock, stock);
+  assert.equal(Share.summary(loaded).silver, 3);
+  P.recordChoice(loaded, npc('principal')); assert.equal(Share.summary(loaded).silver, 4);
+  P.undo(loaded); P.undo(loaded); P.validate(loaded); assert.equal(P.totals(loaded).tm.current, 2);
+});
 test('harvest rating uses user-confirmed grid cutoffs from D through S+', () => {
   assert.deepEqual(Share.tiers.map(({ grade, min }) => [grade, min]), [['D', 0], ['C', 500], ['B', 1000], ['A', 2500], ['S', 4000], ['S+', 5000]]);
   assert.equal(Share.rating(0).grade, 'D');

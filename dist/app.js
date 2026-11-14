@@ -163,7 +163,7 @@
   function render() {
     const { current, surplus, tm } = P.totals(s);
     $('team-bonus').hidden = [6, 12].includes(s.round);
-    $('resource-cards').innerHTML = P.colors.map(c => `<div class="resource-card ${c}"><div class="resource-title"><i class="gem"></i>${names[c]}滴晶</div><label>当前库存<input id="stock-${c}" type="number" min="0" max="1000000000" step="1" value="${current[c]}"></label><label>本轮目标<input id="target-${c}" type="number" min="0" max="1000000000" step="1" value="${s.target[c]}"></label><div class="resource-foot">还差 <b id="gap-${c}"></b>${surplus[c] ? '<br>已超出 ' + fmt(surplus[c]) : ''}</div></div>`).join('');
+    $('resource-cards').innerHTML = P.colors.map(c => `<div class="resource-card ${c}"><div class="resource-title"><i class="gem"></i>${names[c]}滴晶</div><label>本轮目标<input id="target-${c}" type="number" min="0" max="1000000000" step="1" value="${s.target[c]}"></label><label>当前库存<input id="stock-${c}" type="number" min="0" max="1000000000" step="1" value="${current[c]}"></label><div class="resource-foot">还差 <b id="gap-${c}"></b>${surplus[c] ? '<br>已超出 ' + fmt(surplus[c]) : ''}</div></div>`).join('');
     renderGaps();
     $('tm-current').textContent = fmt(tm.current);
     const share = S.summary(s);

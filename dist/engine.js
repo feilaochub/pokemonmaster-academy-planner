@@ -45,12 +45,12 @@
       gap[c] = Math.max(0, s.target[c] - current[c]);
       surplus[c] = Math.max(0, current[c] - s.target[c]);
     }
-    const tmSources = new Set();
+    let tmCurrent = 0;
     for (const npc of s.candidates.filter(n => n.status === 'claimed' && ['kukui', 'principal', 'midterm'].includes(n.type))) {
       const row = s.ledger.find(e => e.kind === 'claim' && e.id === npc.id);
-      if (row && (row.tmGain !== undefined ? row.tmGain > 0 : npc.type !== 'midterm' || (npc.examPassed !== false && row.gain.yellow > 0))) tmSources.add(npc.type);
+      if (row) tmCurrent += row.tmGain ?? (npc.type !== 'midterm' || (npc.examPassed !== false && row.gain.yellow > 0) ? 1 : 0);
     }
-    const tmCurrent = tmSources.size, tmTarget = 3;
+    const tmTarget = 3;
     return { current, earned, gap, surplus, tm: { current: tmCurrent, target: tmTarget, gap: Math.max(0, tmTarget - tmCurrent), surplus: Math.max(0, tmCurrent - tmTarget) } };
   }
   function reward(s, npc) {
@@ -111,7 +111,7 @@
     const npc = s.candidates.find(n => n.id === id);
     if (!npc || npc.round !== s.round || !['available', 'seen'].includes(npc.status)) throw Error('这项奖励已领取、已放弃，或不在当前回合。');
     if (s.candidates.some(n => n.round === npc.round && n.status === 'claimed')) throw Error('本回合已有一项领取记录；更换选择请先撤销。');
-    if (['blue', 'kukui', 'principal', 'midterm', 'final', 'red'].includes(npc.type) &&
+    if (['blue', 'kukui', 'midterm', 'final', 'red'].includes(npc.type) &&
       s.candidates.some(n => n.type === npc.type && n.status === 'claimed')) throw Error('本轮已经领取过此项固定奖励。');
     if (npc.type === 'special' && s.candidates.some(n => n.type === 'special' && n.chain === npc.chain && n.stage === npc.stage && n.status === 'claimed')) throw Error('本轮已经领取过这一连续奖励阶段。');
     const result = reward(s, npc);
@@ -191,7 +191,7 @@
       if ((n.selectedOnly !== undefined && typeof n.selectedOnly !== 'boolean') || (n.examPassed !== undefined && typeof n.examPassed !== 'boolean')) fail();
       ids.add(n.id);
     }
-    for (const t of ['blue', 'kukui', 'principal', 'midterm', 'final', 'red']) if (s.candidates.filter(n => n.type === t && n.status === 'claimed').length > 1) fail();
+    for (const t of ['blue', 'kukui', 'midterm', 'final', 'red']) if (s.candidates.filter(n => n.type === t && n.status === 'claimed').length > 1) fail();
     for (const chain of chains) for (let stage = 1; stage <= stageCount(chain); stage++) if (s.candidates.filter(n => n.type === 'special' && n.chain === chain && n.stage === stage && n.status === 'claimed').length > 1) fail();
     const logged = new Set();
     let lastAfter = null, lastTmAfter = null;

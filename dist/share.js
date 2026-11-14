@@ -57,7 +57,7 @@
     text('银色 · 招式学习器滴晶', 130, 1102, 31, '#c7d3d7', '500');
     text(`${data.silver} / 3`, 1008, 1102, 38, white, '500', 'right');
     rect(72, 1134, 936, 12, '#31554a', 6);
-    if (data.silver) rect(72, 1134, 936 * data.silver / 3, 12, '#a7b6bc', 6);
+    if (data.silver) rect(72, 1134, 936 * Math.min(1, data.silver / 3), 12, '#a7b6bc', 6);
     rect(72, 1200, 936, 2, '#3b5e50');
     rect(72, 1260, 80, 80, lime, 20);
     text('肥', 112, 1317, 46, ink, '700', 'center');

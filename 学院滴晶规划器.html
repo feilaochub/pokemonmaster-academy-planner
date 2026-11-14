@@ -30,7 +30,7 @@
 <main>
 <section class="hero"><div><p class="eyebrow">POKÉMON MASTERS EX · 武道熊师</p><h1>每一滴，都用在<br><em>需要的地方。</em></h1></div><div class="hero-note"><div class="crystal-orbit" aria-hidden="true"><i class="gem red"></i><i class="gem green"></i><i class="gem blue"></i><i class="gem yellow"></i><span>09</span></div><p>第九期 · 武道熊师<br><small>单轮规划 / 共 12 回合</small></p></div></section>
 <div class="workspace"><div class="main-column">
-<section id="inventory" class="panel"><div class="section-head"><div><h2>库存与目标</h2></div><button class="quiet" id="example-target">示例目标</button></div><div id="resource-cards" class="resource-grid"></div><div class="inventory-actions"><button id="save-inventory" class="primary">应用库存与目标</button><span id="inventory-result" class="muted" aria-live="polite"></span></div></section>
+<section id="inventory" class="panel"><div class="section-head"><div><h2>目标与库存</h2></div><button class="quiet" id="example-target">示例目标</button></div><div id="resource-cards" class="resource-grid"></div><div class="inventory-actions"><button id="save-inventory" class="primary">应用目标与库存</button><span id="inventory-result" class="muted" aria-live="polite"></span></div></section>
 <section id="team-bonus" class="panel"><div class="section-head"><div><h2>本轮加成</h2></div><strong id="active-factor" class="factor"></strong></div><div id="boost-options" class="boost-grid"></div><div id="custom-factor-row" class="inline-field" hidden><label for="custom-factor">自定义总倍率</label><input id="custom-factor" type="number" min="0.0001" max="100" step="0.0001"></div></section>
 <section id="encounters" class="panel"><div class="section-head"><div><h2 id="choice-title">这一回合，选择谁？</h2></div><label class="round-label">回合 <select id="round"></select> / 12</label></div><p id="round-status" class="muted" aria-live="polite"></p>
 <form id="npc-form" class="npc-form"><label id="npc-kind-row">NPC / 奖励类型<select id="npc-type"></select></label><div id="npc-options"></div><div id="choice-preview" class="choice-preview" aria-live="polite"></div><div class="form-bottom"><div class="button-pair"><button id="confirm-npc" class="primary" type="submit">确定</button><button id="add-choice" class="quiet" type="button">加入比较</button></div></div></form>
@@ -86,12 +86,12 @@
       gap[c] = Math.max(0, s.target[c] - current[c]);
       surplus[c] = Math.max(0, current[c] - s.target[c]);
     }
-    const tmSources = new Set();
+    let tmCurrent = 0;
     for (const npc of s.candidates.filter(n => n.status === 'claimed' && ['kukui', 'principal', 'midterm'].includes(n.type))) {
       const row = s.ledger.find(e => e.kind === 'claim' && e.id === npc.id);
-      if (row && (row.tmGain !== undefined ? row.tmGain > 0 : npc.type !== 'midterm' || (npc.examPassed !== false && row.gain.yellow > 0))) tmSources.add(npc.type);
+      if (row) tmCurrent += row.tmGain ?? (npc.type !== 'midterm' || (npc.examPassed !== false && row.gain.yellow > 0) ? 1 : 0);
     }
-    const tmCurrent = tmSources.size, tmTarget = 3;
+    const tmTarget = 3;
     return { current, earned, gap, surplus, tm: { current: tmCurrent, target: tmTarget, gap: Math.max(0, tmTarget - tmCurrent), surplus: Math.max(0, tmCurrent - tmTarget) } };
   }
   function reward(s, npc) {
@@ -152,7 +152,7 @@
     const npc = s.candidates.find(n => n.id === id);
     if (!npc || npc.round !== s.round || !['available', 'seen'].includes(npc.status)) throw Error('这项奖励已领取、已放弃，或不在当前回合。');
     if (s.candidates.some(n => n.round === npc.round && n.status === 'claimed')) throw Error('本回合已有一项领取记录；更换选择请先撤销。');
-    if (['blue', 'kukui', 'principal', 'midterm', 'final', 'red'].includes(npc.type) &&
+    if (['blue', 'kukui', 'midterm', 'final', 'red'].includes(npc.type) &&
       s.candidates.some(n => n.type === npc.type && n.status === 'claimed')) throw Error('本轮已经领取过此项固定奖励。');
     if (npc.type === 'special' && s.candidates.some(n => n.type === 'special' && n.chain === npc.chain && n.stage === npc.stage && n.status === 'claimed')) throw Error('本轮已经领取过这一连续奖励阶段。');
     const result = reward(s, npc);
@@ -232,7 +232,7 @@
       if ((n.selectedOnly !== undefined && typeof n.selectedOnly !== 'boolean') || (n.examPassed !== undefined && typeof n.examPassed !== 'boolean')) fail();
       ids.add(n.id);
     }
-    for (const t of ['blue', 'kukui', 'principal', 'midterm', 'final', 'red']) if (s.candidates.filter(n => n.type === t && n.status === 'claimed').length > 1) fail();
+    for (const t of ['blue', 'kukui', 'midterm', 'final', 'red']) if (s.candidates.filter(n => n.type === t && n.status === 'claimed').length > 1) fail();
     for (const chain of chains) for (let stage = 1; stage <= stageCount(chain); stage++) if (s.candidates.filter(n => n.type === 'special' && n.chain === chain && n.stage === stage && n.status === 'claimed').length > 1) fail();
     const logged = new Set();
     let lastAfter = null, lastTmAfter = null;
@@ -424,7 +424,7 @@
     text('银色 · 招式学习器滴晶', 130, 1102, 31, '#c7d3d7', '500');
     text(`${data.silver} / 3`, 1008, 1102, 38, white, '500', 'right');
     rect(72, 1134, 936, 12, '#31554a', 6);
-    if (data.silver) rect(72, 1134, 936 * data.silver / 3, 12, '#a7b6bc', 6);
+    if (data.silver) rect(72, 1134, 936 * Math.min(1, data.silver / 3), 12, '#a7b6bc', 6);
     rect(72, 1200, 936, 2, '#3b5e50');
     rect(72, 1260, 80, 80, lime, 20);
     text('肥', 112, 1317, 46, ink, '700', 'center');
@@ -605,7 +605,7 @@
   function render() {
     const { current, surplus, tm } = P.totals(s);
     $('team-bonus').hidden = [6, 12].includes(s.round);
-    $('resource-cards').innerHTML = P.colors.map(c => `<div class="resource-card ${c}"><div class="resource-title"><i class="gem"></i>${names[c]}滴晶</div><label>当前库存<input id="stock-${c}" type="number" min="0" max="1000000000" step="1" value="${current[c]}"></label><label>本轮目标<input id="target-${c}" type="number" min="0" max="1000000000" step="1" value="${s.target[c]}"></label><div class="resource-foot">还差 <b id="gap-${c}"></b>${surplus[c] ? '<br>已超出 ' + fmt(surplus[c]) : ''}</div></div>`).join('');
+    $('resource-cards').innerHTML = P.colors.map(c => `<div class="resource-card ${c}"><div class="resource-title"><i class="gem"></i>${names[c]}滴晶</div><label>本轮目标<input id="target-${c}" type="number" min="0" max="1000000000" step="1" value="${s.target[c]}"></label><label>当前库存<input id="stock-${c}" type="number" min="0" max="1000000000" step="1" value="${current[c]}"></label><div class="resource-foot">还差 <b id="gap-${c}"></b>${surplus[c] ? '<br>已超出 ' + fmt(surplus[c]) : ''}</div></div>`).join('');
     renderGaps();
     $('tm-current').textContent = fmt(tm.current);
     const share = S.summary(s);
