@@ -1,0 +1,10 @@
+'use strict';
+const fs = require('node:fs');
+const path = require('node:path');
+const root = __dirname;
+let html = fs.readFileSync(path.join(root, 'dist/index.html'), 'utf8');
+html = html.replace('<link rel="stylesheet" href="style.css">', () => '<style>' + fs.readFileSync(path.join(root, 'dist/style.css'), 'utf8') + '</style>');
+for (const name of ['engine.js', 'dialogues.js', 'npcs.js', 'share-qr.js', 'share.js', 'app.js']) html = html.replace(`<script src="${name}"></script>`, () => '<script>' + fs.readFileSync(path.join(root, 'dist', name), 'utf8').replace(/<\/script/gi, '<\\/script') + '</script>');
+if (/src="(?:engine|dialogues|npcs|share-qr|share|app)\.js"|href="style\.css"/.test(html)) throw Error('Standalone file still has external application assets');
+fs.writeFileSync(path.join(root, '学院滴晶规划器.html'), html);
+console.log('Standalone HTML built');

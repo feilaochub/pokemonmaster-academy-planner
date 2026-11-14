@@ -1,0 +1,1 @@
+{"name":"pasio-crystal-planner","version":"1.0.0","private":true,"description":"帕希欧学院第九期滴晶规划器","license":"MIT","scripts":{"test":"node tests.cjs","build":"node build.cjs"}}

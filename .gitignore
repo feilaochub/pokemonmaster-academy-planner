@@ -1,0 +1,7 @@
+node_modules/
+.sites-runtime/
+学院滴晶记录-*.json
+*.tar.gz
+/AGENTS.md
+帕希欧学院-本轮进度*.png
+/.openai/
