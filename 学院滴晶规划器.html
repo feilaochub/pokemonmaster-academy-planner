@@ -15,6 +15,7 @@
 .choice-preview{margin-top:16px;padding:13px 0;border-top:1px solid var(--line);font-size:12px}.choice-preview:empty{display:none}.choice-preview .gains{display:flex;gap:15px;flex-wrap:wrap;margin:9px 0}.choice-preview .formula span{display:block}.actual-result{margin-top:15px}.random-reward{font-size:13px;margin-top:12px;color:var(--blue)}.result-picker{border-top:1px solid var(--line);padding-top:15px;margin-top:15px}.outcome-buttons{display:flex;gap:9px;flex-wrap:wrap;margin-top:9px}.outcome-buttons button{font-size:11px}.result-picker>button{margin-top:10px}.compact-rules{font-size:12px;color:var(--muted)}.compact-rules summary{font-size:13px;color:var(--ink)}.compact-rules a{text-decoration:underline;text-underline-offset:3px}.choice-preview>p{color:var(--muted);margin-top:7px}.npc-form>label>select{max-width:100%}
 
 .silver{color:#889698}.gem.silver,.silver .gem{color:#a2adb0}.silver-resource{grid-column:1/-1;background:#f3f5f4}.silver-resource .form-grid{max-width:600px}.summary-tm{border-top:1px solid #3c5b4d;padding-top:16px;margin-top:20px;font-size:11px}.summary-tm strong{display:flex;gap:7px;align-items:center;font-weight:500}.summary-tm p{margin-top:7px;color:#b6c7bf}.summary-tm b{color:#ecf1eb}.auto-stage{margin-top:13px;font-weight:600;color:var(--green)}
+.summary-card .exam-gap-toggle{display:flex;align-items:center;gap:8px;color:#d6e6c5;font-size:11px;margin:12px 0}.exam-gap-toggle input{margin:0;accent-color:var(--lime)}.exam-gap-toggle input:focus-visible{outline:2px solid var(--lime);outline-offset:3px}
 
 .form-bottom{justify-content:flex-end}.color-caption,.event-meta{font-size:12px;color:var(--muted);margin-top:12px}.dialogue-detail .event-meta{margin:0 0 8px}.dialogue-note{margin-top:10px}
 .reward-color{font-weight:600}.reward-color.yellow{color:#8d691b}.reward-table{width:100%;border-collapse:collapse;margin:14px 0;font-size:12px;text-align:left}.reward-table th{background:#f3f6ed;color:var(--muted);padding:8px;font-size:10px;font-weight:500}.reward-table td{padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:top}.reward-table td:first-child{width:41%}
@@ -35,7 +36,7 @@
 <form id="npc-form" class="npc-form"><label id="npc-kind-row">NPC / 奖励类型<select id="npc-type"></select></label><div id="npc-options"></div><div id="choice-preview" class="choice-preview" aria-live="polite"></div><div class="form-bottom"><div class="button-pair"><button id="confirm-npc" class="primary" type="submit">确定</button><button id="add-choice" class="quiet" type="button">加入比较</button></div></div></form>
 <div id="comparison-area" hidden><div id="comparison-note" class="recommendation"></div><div id="temp-choices"></div></div></section>
 <section class="panel"><div class="section-head"><div><h2>选择记录</h2></div><button id="undo" class="quiet">撤销最后一笔</button></div><div id="ledger"></div></section>
-</div><aside class="sidebar"><section class="summary-card"><h2>本轮还差</h2><div class="big-number" id="total-gap">5,500</div><p class="muted">滴晶 · 各色缺口之和</p><div id="summary-colors"></div><div class="summary-tm"><strong><i class="gem silver"></i>银色 · 招式学习器滴晶</strong><p class="tm-progress"><b id="tm-current">0</b> / 3</p></div></section><section class="share-card"><div class="share-score"><span>四色累计 <b id="share-earned">0</b></span><span>学院评级 <strong id="share-rating">D</strong></span></div><button id="share-progress" class="primary">分享进度</button><button id="new-run" class="quiet new-run-button">开始新一轮</button></section></aside></div>
+</div><aside class="sidebar"><section class="summary-card"><h2>本轮还差</h2><label class="exam-gap-toggle"><input id="exclude-exam-rewards" type="checkbox" checked aria-describedby="gap-basis">扣除未领考试奖励</label><div class="big-number" id="total-gap" aria-live="polite">4,150</div><p class="muted" id="gap-basis">按最高难度通过预留</p><div id="summary-colors"></div><div class="summary-tm"><strong><i class="gem silver"></i>银色 · 招式学习器滴晶</strong><p class="tm-progress"><b id="tm-current">0</b> / 3</p></div></section><section class="share-card"><div class="share-score"><span>四色累计 <b id="share-earned">0</b></span><span>学院评级 <strong id="share-rating">D</strong></span></div><button id="share-progress" class="primary">分享进度</button><button id="new-run" class="quiet new-run-button">开始新一轮</button></section></aside></div>
 <details id="rules" class="panel compact-rules"><summary>计算规则与资料来源</summary><div class="reference-copy"><p>普通对战按基础奖励乘队伍倍率；剧情、对话和青绿不乘队伍倍率。所有新奖励逐色向上取整。每色有效补缺=min(本次奖励, 当前缺口)，先补银色，再按四色补缺和溢出比较。随机奖池只列可能结果，不假设各档等概率。</p><p>第6回合固定期中考，最高难度黄色基础300；第12回合固定期末考，最高难度红绿蓝各基础200，再乘考试倍率。考试只上当期学院拍组，固定1.5倍，不提供倍率设置。原攻略450和300对应300×1.5与200×1.5，不再重复乘三人队伍倍率。</p><p>特殊对战由已确认记录自动推进：火箭队、满充、妮莫、丹帝共3阶段；对战女城主共4阶段，基础为对应三色各20／40／60／80。后续出现不保证，不提前入账。撤销领取会回退阶段。库库伊、校长和通过期中考另给银色招式学习器滴晶1枚，不乘倍率。</p><p>只采用原表通用区与通用区域资料，不包含第一、二期限定内容。通用对话12类、具名剧情5项，另有任意三色各140的三色剧情；普通对战按单色／双色／三色选择。表外奖励可手动补录。新规则仅影响之后的计算，已有领取记录保留当时快照。</p><p><a href="https://www.bilibili.com/opus/1270413835442847744" target="_blank" rel="noopener noreferrer">攻略及原表 ↗</a> · <a href="https://wiki.52poke.com/zh-hans/%E5%B8%95%E5%B8%8C%E6%AD%90%E5%AD%B8%E9%99%A2" target="_blank" rel="noopener noreferrer">区域奖励与对话资料 ↗</a> · <a href="https://pokemonmasters-game.com/en-US/announcements/Event_8100_3W_4" target="_blank" rel="noopener noreferrer">官方考试说明 ↗</a></p><details><summary>分享统计与学院评级</summary><p>只累计本轮已确认领取的四色奖励；库存校准和未确认选项不计入。银色单列，不计分。图片条形长度按本轮各色收获相对最大值展示。</p><table class="reward-table"><thead><tr><th>学院评级</th><th>四色累计获得</th></tr></thead><tbody id="rating-tiers"></tbody></table><p>按用户确认，借用游戏石盘等级的D～S+分档，计分改用本轮四色累计获得量，不看消耗。学院评级不代表游戏实际石盘等级；未结束时仅评价当前收获，不预测最终等级。</p><p>官方说明等级与石盘培养结果有关；玩家记录的石盘等级门槛为D0、C500、B1000、A2500、S4000、S+5000。官网未公布完整数值公式，数值依据玩家记录和用户提供的分档表。</p><p><a href="https://pokemonmasters-game.com/zh-TW/announcements/Event_8100_3W_4" target="_blank" rel="noopener noreferrer">官方学院说明 ↗</a> · <a href="https://www.famitsu.com/article/202503/37683" target="_blank" rel="noopener noreferrer">先行实测与最高S+ ↗</a> · <a href="https://midonia.hatenadiary.jp/entry/20250401/1743512340" target="_blank" rel="noopener noreferrer">玩家等级计分记录 ↗</a></p><p>分享图片在本机生成，不上传进度。二维码指向正式网页，访问受该网页当前权限控制。图片不能恢复浏览器存档。</p></details></div></details>
 </main><dialog id="share-dialog" class="share-dialog" aria-label="分享进度"><div class="share-modal-layout"><img id="share-image" class="share-image" alt="本轮滴晶收获"><div class="share-actions"><a id="share-download" class="primary link-button" download="帕希欧学院-本轮进度.png">下载图片</a><button id="close-share" class="quiet" autofocus>关闭</button></div></div></dialog><div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 <script>(function (root) {
@@ -43,7 +44,7 @@
   const colors = ['red', 'green', 'blue', 'yellow'];
   const vector = (n = 0) => Object.fromEntries(colors.map(c => [c, n]));
   const defaults = () => ({
-    version: 1, ruleRevision: 2, round: 1, boost: 'A', customMultiplier: 3.5, examMultiplier: 1.5,
+    version: 1, ruleRevision: 2, round: 1, boost: 'A', customMultiplier: 3.5, examMultiplier: 1.5, excludeExamRewards: true,
     stock: vector(), target: { red: 1440, green: 840, blue: 1800, yellow: 1420 }, tmStock: 0, tmTarget: 3,
     rules: { boosts: { A: 3.5, B: 2.8, C: 2.1, D: 1.7 }, rounding: 'ceil',
       battleBase: 40, kukui: 90, principal: 90, blue: 400, story3: 140,
@@ -117,6 +118,16 @@
     const gain = Object.fromEntries(colors.map(c => [c, round(base[c] * factor, 'ceil')]));
     const tmGain = ['kukui', 'principal', 'midterm'].includes(t) && npc.examPassed !== false ? 1 : 0;
     return { base, gain, scaled, factor, known, tmGain };
+  }
+  function planningGap(s) {
+    const { gap } = totals(s);
+    if (s.excludeExamRewards === false) return gap;
+    for (const [type, round] of [['midterm', 6], ['final', 12]]) {
+      if (s.round > round || s.candidates.some(n => n.type === type && n.status === 'claimed')) continue;
+      const { gain } = reward(s, { type });
+      for (const c of colors) gap[c] = Math.max(0, gap[c] - gain[c]);
+    }
+    return gap;
   }
   function evaluate(s, npc) {
     const result = reward(s, npc), { gap } = totals(s);
@@ -199,6 +210,7 @@
     if ((s.ruleRevision !== undefined && s.ruleRevision !== 2) ||
       (s.examMultiplier !== undefined && (!numeric(s.examMultiplier, 100, false) || s.examMultiplier <= 0))) fail();
     if ((s.tmStock !== undefined && !numeric(s.tmStock)) || (s.tmTarget !== undefined && !numeric(s.tmTarget))) fail();
+    if (s.excludeExamRewards !== undefined && typeof s.excludeExamRewards !== 'boolean') fail();
     const r = s.rules;
     if (!r.boosts || !r.scaled || !['floor', 'round', 'ceil'].includes(r.rounding) ||
       !['A', 'B', 'C', 'D'].every(k => numeric(r.boosts[k], 100, false) && r.boosts[k] > 0) ||
@@ -257,10 +269,11 @@
       s.rules = defaults().rules; s.ruleRevision = 2; s.examMultiplier = 1.5;
     }
     s.tmStock ??= 0; s.tmTarget = 3;
+    s.excludeExamRewards ??= true;
     s.rules.rounding = 'ceil'; s.examMultiplier = 1.5;
     return s;
   }
-  root.Pasio = { colors, vector, defaults, multiplier, sum, totals, reward, evaluate, rank, specialDefs, stageCount, nextStage, specialRemainder, claim, recordChoice, calibrate, undo, validate, upgrade };
+  root.Pasio = { colors, vector, defaults, multiplier, sum, totals, reward, planningGap, evaluate, rank, specialDefs, stageCount, nextStage, specialRemainder, claim, recordChoice, calibrate, undo, validate, upgrade };
   if (typeof module !== 'undefined') module.exports = root.Pasio;
 })(typeof window === 'undefined' ? globalThis : window);
 </script><script>(function (root) {
@@ -470,7 +483,7 @@
     const remainder = P.specialRemainder(s, { ...n, stage: n.stage + 1 });
     return `<details><summary>后续奖励</summary><p>若后续全部出现并通过：${remainder ? esc(gainText(remainder)) : '奖励待确认'}。</p></details>`;
   }
-  function resetComposer() { selectedRef = ''; showAll = false; actualIndex = ''; manualValues = emptyInputs(); manualScaled = false; selectedColor = 'blue'; battleKind = 'triple'; battleColors = ['red', 'blue', 'yellow']; storyColors = ['red', 'green', 'blue']; singleBase = 60; examPassed = true; $('npc-type').value = ''; }
+  function resetComposer(state = s) { selectedRef = ''; showAll = false; actualIndex = ''; manualValues = emptyInputs(); manualScaled = false; selectedColor = 'blue'; battleKind = 'triple'; battleColors = ['red', 'blue', 'yellow']; storyColors = ['red', 'green', 'blue']; singleBase = 60; examPassed = true; $('npc-type').value = state.round === 1 && !state.candidates.some(n => n.status === 'claimed' && (n.round === 1 || n.type === 'principal')) ? 'principal' : ''; }
   function reference(t = activeType()) { return t === 'dialogue' ? D.events.find(e => e.id === selectedRef) : t === 'story' ? N.events.find(e => e.id === selectedRef) : t === 'oak' ? D.oak : null; }
   function randomSummary(id) {
     const p = D.prizes[id]; if (!p) return '奖励未确认，请按游戏实得填写。';
@@ -552,7 +565,7 @@
     } else if (t === 'custom' || (['story', 'dialogue'].includes(t) && selectedRef === 'custom')) {
       html += manualMarkup('actual', manualValues);
       if (t === 'custom') html += `<label class="manual-scale"><input id="actual-scaled" type="checkbox" ${manualScaled ? 'checked' : ''}>输入的是基础值，需要乘队伍倍率</label>`;
-    } else if (['kukui', 'principal'].includes(t)) html += `<label>奖励颜色<select id="reward-color">${P.colors.map(c => `<option value="${c}" ${selectedColor === c ? 'selected' : ''}>${names[c]}</option>`).join('')}</select></label><p class="event-meta">${t === 'kukui' ? '入口 · 第1–5回合' : '中庭 · 第7–11回合'}</p>`;
+    } else if (['kukui', 'principal'].includes(t)) html += `<label>奖励颜色<select id="reward-color">${P.colors.map(c => `<option value="${c}" ${selectedColor === c ? 'selected' : ''}>${names[c]}</option>`).join('')}</select></label>${t === 'kukui' ? '<p class="event-meta">入口 · 第1–5回合</p>' : ''}`;
     else if (exam) html += `<label class="manual-scale"><input id="exam-passed" type="checkbox" ${examPassed ? 'checked' : ''}>考试通过</label>`;
     $('npc-options').innerHTML = html;
     const claimed = s.candidates.some(n => n.round === s.round && n.status === 'claimed');
@@ -581,16 +594,23 @@
     $('temp-choices').innerHTML = ranked.map(r => { const n = r.npc; return `<article class="npc-card ${best?.npc.id === n.id ? 'best' : ''}"><div class="npc-head"><strong>${esc(n.label)}</strong></div>${r.known ? `<div class="gains">${gains(r.gain)}${tmBadge(r.tmGain)}</div>${n.randomId ? randomDetails(n.randomId) : ''}<p class="npc-metrics">可补缺口 ${fmt(r.useful)} · 溢出 ${fmt(r.waste)}</p><details><summary>计算过程</summary><div class="formula">${formula(r)}</div></details>${futureReward(n)}` : randomDetails(n.randomId)}<div class="npc-actions"><button class="quiet" type="button" data-remove="${n.id}">移除</button><button class="primary" type="button" data-claim="${n.id}" ${claimed ? 'disabled' : ''}>确认已领取</button></div>${openReward === n.id ? `<div class="result-picker">${resultMarkup(n)}</div>` : ''}</article>`; }).join('');
     $('comparison-area').hidden = !drafts.length;
   }
-  function render() {
-    const { current, gap, surplus, tm } = P.totals(s);
-    $('team-bonus').hidden = [6, 12].includes(s.round);
-    $('resource-cards').innerHTML = P.colors.map(c => `<div class="resource-card ${c}"><div class="resource-title"><i class="gem"></i>${names[c]}滴晶</div><label>当前库存<input id="stock-${c}" type="number" min="0" max="1000000000" step="1" value="${current[c]}"></label><label>本轮目标<input id="target-${c}" type="number" min="0" max="1000000000" step="1" value="${s.target[c]}"></label><div class="resource-foot">还差 <b>${fmt(gap[c])}</b>${surplus[c] ? '<br>已超出 ' + fmt(surplus[c]) : ''}</div></div>`).join('');
+  function renderGaps() {
+    const { current } = P.totals(s), gap = P.planningGap(s);
+    $('exclude-exam-rewards').checked = s.excludeExamRewards;
+    $('gap-basis').textContent = s.excludeExamRewards ? '按最高难度通过预留' : '滴晶 · 各色缺口之和';
     $('total-gap').textContent = fmt(P.sum(gap));
+    for (const c of P.colors) $('gap-' + c).textContent = fmt(gap[c]);
+    $('summary-colors').innerHTML = P.colors.map(c => `<div class="summary-color"><div class="summary-color-line"><span class="summary-color-label"><i class="gem ${c}"></i>${names[c]}</span><span>${fmt(gap[c])}</span></div><div class="progress ${c}"><i style="width:${s.target[c] ? Math.min(100, current[c] / s.target[c] * 100) : 100}%"></i></div></div>`).join('');
+  }
+  function render() {
+    const { current, surplus, tm } = P.totals(s);
+    $('team-bonus').hidden = [6, 12].includes(s.round);
+    $('resource-cards').innerHTML = P.colors.map(c => `<div class="resource-card ${c}"><div class="resource-title"><i class="gem"></i>${names[c]}滴晶</div><label>当前库存<input id="stock-${c}" type="number" min="0" max="1000000000" step="1" value="${current[c]}"></label><label>本轮目标<input id="target-${c}" type="number" min="0" max="1000000000" step="1" value="${s.target[c]}"></label><div class="resource-foot">还差 <b id="gap-${c}"></b>${surplus[c] ? '<br>已超出 ' + fmt(surplus[c]) : ''}</div></div>`).join('');
+    renderGaps();
     $('tm-current').textContent = fmt(tm.current);
     const share = S.summary(s);
     $('share-rating').textContent = share.rating.grade; $('share-rating').style.color = share.rating.color;
     $('share-earned').textContent = fmt(share.total);
-    $('summary-colors').innerHTML = P.colors.map(c => `<div class="summary-color"><div class="summary-color-line"><span class="summary-color-label"><i class="gem ${c}"></i>${names[c]}</span><span>${fmt(gap[c])}</span></div><div class="progress ${c}"><i style="width:${s.target[c] ? Math.min(100, current[c] / s.target[c] * 100) : 100}%"></i></div></div>`).join('');
     $('boost-options').innerHTML = ['A', 'B', 'C', 'D', 'custom'].map(b => `<button class="boost-option ${s.boost === b ? 'active' : ''}" data-boost="${b}" aria-pressed="${s.boost === b}">${b === 'custom' ? '自定义' : b === 'D' ? '最低组合' : b + '组合'}<strong>×${fmt(b === 'custom' ? s.customMultiplier : s.rules.boosts[b])}</strong></button>`).join('');
     $('active-factor').textContent = '×' + fmt(P.multiplier(s)); $('custom-factor-row').hidden = s.boost !== 'custom'; $('custom-factor').value = s.customMultiplier; $('round').value = s.round;
     const finished = s.round === 12 && s.candidates.some(n => n.round === 12 && n.status === 'claimed');
@@ -606,7 +626,7 @@
   $('round').innerHTML = Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join('');
   $('rating-tiers').innerHTML = S.tiers.map((tier, i) => `<tr><td>${tier.grade}</td><td>${fmt(tier.min)}${S.tiers[i + 1] ? '–' + fmt(S.tiers[i + 1].min - 1) : '及以上'}</td></tr>`).join('');
   $('npc-type').addEventListener('change', () => { const t = $('npc-type').value; resetComposer(); $('npc-type').value = t; renderComposer(); });
-  $('round').addEventListener('change', () => { drafts = []; openReward = null; const round = Number($('round').value); resetComposer(); change(next => { next.round = round; }); });
+  $('round').addEventListener('change', () => { drafts = []; openReward = null; const round = Number($('round').value); change(next => { next.round = round; resetComposer(next); }); });
   $('npc-options').addEventListener('change', e => {
     const id = e.target.id;
     if (id === 'npc-reference') { selectedRef = e.target.value; actualIndex = ''; manualValues = emptyInputs(); renderComposer(); }
@@ -639,6 +659,7 @@
   $('boost-options').addEventListener('click', e => { const b = e.target.closest('[data-boost]'); if (b) change(next => { next.boost = b.dataset.boost; }); });
   $('custom-factor').addEventListener('change', () => change(next => { next.customMultiplier = number($('custom-factor').value, 100, true); }));
   $('save-inventory').addEventListener('click', () => change(next => { const stock = P.vector(); for (const c of P.colors) { stock[c] = number($('stock-' + c).value); next.target[c] = number($('target-' + c).value); } P.calibrate(next, stock); }, '库存与目标已更新，历史领取未重复叠加。'));
+  $('exclude-exam-rewards').addEventListener('change', e => { s.excludeExamRewards = e.target.checked; persist(); renderGaps(); });
   $('example-target').addEventListener('click', () => { for (const c of P.colors) $('target-' + c).value = P.defaults().target[c]; toast('已填入示例目标，请点击应用。'); });
   $('undo').addEventListener('click', () => { if (change(next => P.undo(next), '已撤销最后一笔，领取时的库存与回合已恢复。')) { drafts = []; openReward = null; resetComposer(); render(); } });
   $('share-progress').addEventListener('click', () => {
@@ -651,9 +672,9 @@
     finally { button.disabled = false; }
   });
   $('close-share').addEventListener('click', () => $('share-dialog').close());
-  $('new-run').addEventListener('click', () => { if (confirm('新一轮将清空本轮库存和选择记录，保留目标与倍率。此操作不能撤销。是否继续？')) change(next => { const fresh = P.defaults(); next.stock = fresh.stock; next.tmStock = 0; next.round = 1; next.candidates = []; next.ledger = []; drafts = []; resetComposer(); }, '新一轮已开始，请按游戏实际设置库存。'); });
+  $('new-run').addEventListener('click', () => { if (confirm('新一轮将清空本轮库存和选择记录，保留目标与倍率。此操作不能撤销。是否继续？')) change(next => { const fresh = P.defaults(); next.stock = fresh.stock; next.tmStock = 0; next.round = 1; next.candidates = []; next.ledger = []; drafts = []; resetComposer(next); }, '新一轮已开始，请按游戏实际设置库存。'); });
   try { const saved = localStorage.getItem(key); if (saved) s = P.upgrade(JSON.parse(saved)); } catch { toast('无法读取已有记录，当前显示初始状态；本机存档可能损坏。', true); }
-  render();
+  resetComposer(); render();
 })();
 </script>
 </body></html>

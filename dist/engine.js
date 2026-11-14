@@ -3,7 +3,7 @@
   const colors = ['red', 'green', 'blue', 'yellow'];
   const vector = (n = 0) => Object.fromEntries(colors.map(c => [c, n]));
   const defaults = () => ({
-    version: 1, ruleRevision: 2, round: 1, boost: 'A', customMultiplier: 3.5, examMultiplier: 1.5,
+    version: 1, ruleRevision: 2, round: 1, boost: 'A', customMultiplier: 3.5, examMultiplier: 1.5, excludeExamRewards: true,
     stock: vector(), target: { red: 1440, green: 840, blue: 1800, yellow: 1420 }, tmStock: 0, tmTarget: 3,
     rules: { boosts: { A: 3.5, B: 2.8, C: 2.1, D: 1.7 }, rounding: 'ceil',
       battleBase: 40, kukui: 90, principal: 90, blue: 400, story3: 140,
@@ -77,6 +77,16 @@
     const gain = Object.fromEntries(colors.map(c => [c, round(base[c] * factor, 'ceil')]));
     const tmGain = ['kukui', 'principal', 'midterm'].includes(t) && npc.examPassed !== false ? 1 : 0;
     return { base, gain, scaled, factor, known, tmGain };
+  }
+  function planningGap(s) {
+    const { gap } = totals(s);
+    if (s.excludeExamRewards === false) return gap;
+    for (const [type, round] of [['midterm', 6], ['final', 12]]) {
+      if (s.round > round || s.candidates.some(n => n.type === type && n.status === 'claimed')) continue;
+      const { gain } = reward(s, { type });
+      for (const c of colors) gap[c] = Math.max(0, gap[c] - gain[c]);
+    }
+    return gap;
   }
   function evaluate(s, npc) {
     const result = reward(s, npc), { gap } = totals(s);
@@ -159,6 +169,7 @@
     if ((s.ruleRevision !== undefined && s.ruleRevision !== 2) ||
       (s.examMultiplier !== undefined && (!numeric(s.examMultiplier, 100, false) || s.examMultiplier <= 0))) fail();
     if ((s.tmStock !== undefined && !numeric(s.tmStock)) || (s.tmTarget !== undefined && !numeric(s.tmTarget))) fail();
+    if (s.excludeExamRewards !== undefined && typeof s.excludeExamRewards !== 'boolean') fail();
     const r = s.rules;
     if (!r.boosts || !r.scaled || !['floor', 'round', 'ceil'].includes(r.rounding) ||
       !['A', 'B', 'C', 'D'].every(k => numeric(r.boosts[k], 100, false) && r.boosts[k] > 0) ||
@@ -217,9 +228,10 @@
       s.rules = defaults().rules; s.ruleRevision = 2; s.examMultiplier = 1.5;
     }
     s.tmStock ??= 0; s.tmTarget = 3;
+    s.excludeExamRewards ??= true;
     s.rules.rounding = 'ceil'; s.examMultiplier = 1.5;
     return s;
   }
-  root.Pasio = { colors, vector, defaults, multiplier, sum, totals, reward, evaluate, rank, specialDefs, stageCount, nextStage, specialRemainder, claim, recordChoice, calibrate, undo, validate, upgrade };
+  root.Pasio = { colors, vector, defaults, multiplier, sum, totals, reward, planningGap, evaluate, rank, specialDefs, stageCount, nextStage, specialRemainder, claim, recordChoice, calibrate, undo, validate, upgrade };
   if (typeof module !== 'undefined') module.exports = root.Pasio;
 })(typeof window === 'undefined' ? globalThis : window);

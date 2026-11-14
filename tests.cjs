@@ -199,6 +199,78 @@ test('exam rounds are exclusive, highest bases multiply only the exam bonus', ()
 test('failed exam still advances without granting resources', () => {
   const s = P.defaults(); s.round = 6; P.recordChoice(s, npc('midterm', { examPassed: false })); assert.equal(s.round, 7); assert.equal(P.sum(s.stock), 0); P.undo(s); assert.equal(s.round, 6);
 });
+test('planning gap defaults to reserving both exams without booking inventory', () => {
+  const s = P.defaults(), before = structuredClone(s);
+  assert.equal(s.excludeExamRewards, true);
+  assert.deepEqual(P.planningGap(s), { red: 1140, green: 540, blue: 1500, yellow: 970 });
+  assert.equal(P.sum(P.planningGap(s)), 4150); assert.deepEqual(s, before);
+  s.excludeExamRewards = false;
+  assert.deepEqual(P.planningGap(s), P.totals(s).gap);
+  assert.equal(P.sum(P.planningGap(s)), 5500);
+});
+
+test('planning gap only reserves current and future exams when starting mid-round', () => {
+  const s = P.defaults(); P.calibrate(s, P.vector(100));
+  s.round = 6; assert.deepEqual(P.planningGap(s), { red: 1040, green: 440, blue: 1400, yellow: 870 });
+  for (const round of [7, 12]) {
+    s.round = round; assert.deepEqual(P.planningGap(s), { red: 1040, green: 440, blue: 1400, yellow: 1320 });
+  }
+});
+
+test('exam confirmation replaces reserve once and undo restores it, including old receipts', () => {
+  const s = P.defaults(), initial = P.planningGap(s);
+  s.round = 6; P.recordChoice(s, npc('midterm'));
+  assert.deepEqual(P.planningGap(s), initial);
+  s.round = 12; P.recordChoice(s, npc('final'));
+  assert.deepEqual(P.planningGap(s), initial);
+  assert.deepEqual(P.planningGap(s), P.totals(s).gap);
+  for (const row of s.ledger) { delete row.roundBefore; delete row.roundAfter; }
+  const loaded = P.upgrade(JSON.parse(JSON.stringify(s)));
+  loaded.round = 1; assert.deepEqual(P.planningGap(loaded), initial);
+  P.undo(loaded); assert.equal(loaded.round, 12); assert.deepEqual(P.planningGap(loaded), initial);
+  P.undo(loaded); assert.equal(loaded.round, 6); assert.deepEqual(P.planningGap(loaded), initial);
+});
+
+test('failed exams remove the unavailable reserve and undo restores it', () => {
+  const s = P.defaults(); s.round = 6;
+  P.recordChoice(s, npc('midterm', { examPassed: false }));
+  assert.equal(P.planningGap(s).yellow, 1420);
+  s.round = 12; P.recordChoice(s, npc('final', { examPassed: false }));
+  assert.deepEqual(P.planningGap(s), s.target);
+  s.round = 1; assert.deepEqual(P.planningGap(s), s.target);
+  P.undo(s); assert.deepEqual(P.planningGap(s), { red: 1140, green: 540, blue: 1500, yellow: 1420 });
+  P.undo(s); assert.equal(P.planningGap(s).yellow, 970);
+});
+
+test('exam reserve caps each color at zero without moving overflow between colors', () => {
+  const s = P.defaults(); s.target = { red: 0, green: 100, blue: 800, yellow: 200 };
+  P.calibrate(s, { ...P.vector(), red: 1000, blue: 100 });
+  assert.deepEqual(P.planningGap(s), { red: 0, green: 0, blue: 400, yellow: 0 });
+  s.boost = 'custom'; s.customMultiplier = 100; s.examMultiplier = 100;
+  assert.deepEqual(P.planningGap(s), { red: 0, green: 0, blue: 400, yellow: 0 });
+  assert.equal(P.totals(s).tm.current, 0);
+});
+
+test('display preference upgrades old saves and persists without rewriting receipts', () => {
+  const old = P.defaults(); old.round = 6; P.recordChoice(old, npc('midterm'));
+  delete old.excludeExamRewards;
+  const stock = structuredClone(old.stock), ledger = structuredClone(old.ledger);
+  const loaded = P.upgrade(JSON.parse(JSON.stringify(old)));
+  assert.equal(loaded.excludeExamRewards, true);
+  assert.deepEqual(loaded.stock, stock); assert.deepEqual(loaded.ledger, ledger);
+  loaded.excludeExamRewards = false;
+  assert.equal(P.upgrade(JSON.parse(JSON.stringify(loaded))).excludeExamRewards, false);
+  loaded.excludeExamRewards = 'false'; assert.throws(() => P.validate(loaded));
+});
+
+test('exam display switch leaves candidate metrics and share based on actual receipts', () => {
+  const s = P.defaults(); s.round = 6; P.recordChoice(s, npc('midterm'));
+  const n = npc('blue'), before = P.evaluate(s, n), share = require('./dist/share.js').summary(s);
+  s.excludeExamRewards = false;
+  assert.deepEqual(P.evaluate(s, n), before);
+  assert.deepEqual(require('./dist/share.js').summary(s), share);
+});
+
 test('old rules upgrade without recalculating actual inventory or old receipt snapshots', () => {
   const old = P.defaults(); delete old.ruleRevision; delete old.examMultiplier;
   old.rules.midterm = 450; old.rules.final = 300; old.rules.scaled.midterm = false; old.rules.scaled.final = false; old.rules.special.wally = [null, null, null];
