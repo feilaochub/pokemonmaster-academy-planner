@@ -218,7 +218,8 @@
   $('custom-factor').addEventListener('change', () => change(next => { next.customMultiplier = number($('custom-factor').value, 100, true); }));
   $('save-inventory').addEventListener('click', () => change(next => { const stock = P.vector(); for (const c of P.colors) { stock[c] = number($('stock-' + c).value); next.target[c] = number($('target-' + c).value); } P.calibrate(next, stock); }, '库存与目标已更新，历史领取未重复叠加。'));
   $('exclude-exam-rewards').addEventListener('change', e => { s.excludeExamRewards = e.target.checked; persist(); renderGaps(); });
-  $('example-target').addEventListener('click', () => { for (const c of P.colors) $('target-' + c).value = P.defaults().target[c]; toast('已填入示例目标，请点击应用。'); });
+  $('example-target').title = '默认目标：' + P.colors.map(c => names[c] + '滴晶 ' + fmt(P.defaults().target[c])).join('、');
+  $('example-target').addEventListener('click', () => { for (const c of P.colors) $('target-' + c).value = P.defaults().target[c]; toast('已填入默认配置，请点击确定。'); });
   $('undo').addEventListener('click', () => { if (change(next => P.undo(next), '已撤销最后一笔，领取时的库存与回合已恢复。')) { drafts = []; openReward = null; resetComposer(); render(); } });
   $('share-progress').addEventListener('click', () => {
     const button = $('share-progress'); button.disabled = true;
