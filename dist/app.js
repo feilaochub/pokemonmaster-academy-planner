@@ -3,15 +3,17 @@
   const P = window.Pasio, D = window.PasioDialogues, N = window.PasioNpcs, S = window.PasioShare, key = 'pasio-crystal-planner-v1';
   const $ = id => document.getElementById(id), names = { red: '红色', green: '绿色', blue: '蓝色', yellow: '黄色' };
   const typeNames = { battle: '对战NPC', story: '剧情NPC（固定数量）', dialogue: '对话NPC（随机数量）', kukui: '库库伊', principal: '校长', red: '赤红', oak: '大木', blue: '青绿', custom: '未收录 / 自定义奖励' };
+  const groupNames = { battle: '对战', fixed: '固定剧情滴晶', random: '随机剧情滴晶', special: '特殊对战', custom: '未收录 / 自定义奖励' };
   const chains = P.specialDefs;
+  const closedSections = new Set();
   const roundNames = { floor: '逐色向下取整', round: '逐色四舍五入', ceil: '逐色向上取整' };
   const esc = v => String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const colorText = v => esc(v).replace(/红色|绿色|蓝色|黄色/g, word => `<span class="reward-color ${Object.keys(names).find(c => names[c] === word)}">${word}</span>`);
   const fmt = n => Number(n).toLocaleString('zh-CN', { maximumFractionDigits: 4 });
   const emptyInputs = () => Object.fromEntries(P.colors.map(c => [c, '']));
-  let s = P.defaults(), drafts = [], selectedRef = '', showAll = false, actualIndex = '', manualValues = emptyInputs(), manualScaled = false;
+  let s = P.defaults(), drafts = [], selectedGroup = 'battle', selectedType = '', selectedRef = '', onlyCurrentRound = true, actualIndex = '', manualValues = emptyInputs(), manualScaled = false;
   let selectedColor = 'blue', battleKind = 'triple', battleColors = ['red', 'blue', 'yellow'], storyColors = ['red', 'green', 'blue'], singleBase = 60, examPassed = true, openReward = null, timer;
-  function activeType() { return s.round === 6 ? 'midterm' : s.round === 12 ? 'final' : $('npc-type').value; }
+  function activeType() { return s.round === 6 ? 'midterm' : s.round === 12 ? 'final' : selectedType; }
   function toast(message, error = false) {
     $('toast').textContent = message; $('toast').className = 'toast' + (error ? ' error' : ''); $('toast').hidden = false;
     clearTimeout(timer); timer = setTimeout(() => { $('toast').hidden = true; }, error ? 6500 : 3500);
@@ -31,6 +33,7 @@
     catch (e) { toast(e.message, true); return false; }
   }
   function gainText(v) { return P.colors.filter(c => v[c]).map(c => names[c] + ' +' + fmt(v[c])).join(' ／ ') || '四色均为0'; }
+  function outcomeText(v) { return v.red > 0 && P.colors.every(c => v[c] === v.red) ? '四色各 ' + fmt(v.red) : gainText(v); }
   function gains(v) { return P.colors.filter(c => v[c]).map(c => `<span class="gain-item ${c}"><i class="gem"></i>${names[c]} +${fmt(v[c])}</span>`).join('') || '<span class="muted">四色均为0</span>'; }
   function tmBadge(n) { return n ? `<span class="gain-item silver"><i class="gem"></i>银色招式学习器滴晶 +${fmt(n)}</span>` : ''; }
   function formula(r, rounding = 'ceil') {
@@ -41,19 +44,42 @@
     const remainder = P.specialRemainder(s, { ...n, stage: n.stage + 1 });
     return `<details><summary>后续奖励</summary><p>若后续全部出现并通过：${remainder ? esc(gainText(remainder)) : '奖励待确认'}。</p></details>`;
   }
-  function resetComposer(state = s) { selectedRef = ''; showAll = false; actualIndex = ''; manualValues = emptyInputs(); manualScaled = false; selectedColor = 'blue'; battleKind = 'triple'; battleColors = ['red', 'blue', 'yellow']; storyColors = ['red', 'green', 'blue']; singleBase = 60; examPassed = true; $('npc-type').value = state.round === 1 && !state.candidates.some(n => n.status === 'claimed' && (n.round === 1 || n.type === 'principal')) ? 'principal' : ''; }
+  function clearSelection() { selectedType = ''; selectedRef = ''; actualIndex = ''; manualValues = emptyInputs(); manualScaled = false; selectedColor = 'blue'; battleKind = 'triple'; battleColors = ['red', 'blue', 'yellow']; storyColors = ['red', 'green', 'blue']; singleBase = 60; examPassed = true; }
+  function resetComposer(state = s) {
+    clearSelection();
+    onlyCurrentRound = true; closedSections.clear();
+    if (state.round === 1 && !state.candidates.some(n => n.status === 'claimed' && (n.round === 1 || n.type === 'kukui'))) { selectedGroup = 'battle'; selectedType = 'kukui'; }
+    else if (selectedGroup === 'custom') selectedType = 'custom';
+  }
   function reference(t = activeType()) { return t === 'dialogue' ? D.events.find(e => e.id === selectedRef) : t === 'story' ? N.events.find(e => e.id === selectedRef) : t === 'oak' ? D.oak : null; }
   function randomSummary(id) {
     const p = D.prizes[id]; if (!p) return '奖励未确认，请按游戏实得填写。';
     const selectable = D.events.find(e => e.id === id)?.choices.length > 1;
     return (p.simultaneous ? '四色同时各' : p.colors.map(c => names[c]).join('／') + (p.colors.length > 1 ? selectable ? '可选一种；随机数量：' : '随机一种：' : '：')) + p.amounts.map(fmt).join('或');
   }
+  function compactPrize(id) {
+    const p = D.prizes[id]; if (!p) return '奖励待确认';
+    const selectable = D.events.find(e => e.id === id)?.choices.length > 1;
+    const colors = p.simultaneous ? '四色各' : p.colors.length === 4 ? selectable ? '可选四色' : '随机单色' : (p.colors.length > 1 ? selectable ? '可选' : '随机' : '') + p.colors.map(c => names[c][0]).join('／');
+    const amounts = p.amounts.length > 2 ? fmt(Math.min(...p.amounts)) + '～' + fmt(Math.max(...p.amounts)) : p.amounts.map(fmt).join('／');
+    return colors + ' ' + amounts;
+  }
   function rewardTable(e) {
     return `<table class="reward-table"><thead><tr><th>游戏选项</th><th>可能奖励（不乘倍率）</th></tr></thead><tbody>${e.choices.map(([a, b]) => `<tr><td>${colorText(a)}</td><td>${colorText(b)}</td></tr>`).join('')}</tbody></table>`;
   }
   function randomDetails(id) {
     const e = id === 'oak' ? D.oak : D.events.find(item => item.id === id);
-    return e ? rewardTable(e) : `<p class="random-reward">${colorText(randomSummary(id))}</p>`;
+    if (id === 'oak') return rewardTable(e);
+    return e ? `<details class="dialogue-detail" open><summary>游戏选项与奖励资料</summary><p>${esc(e.question)}</p>${rewardTable(e)}${e.note ? `<p class="dialogue-note">${esc(e.note)}</p>` : ''}</details>` : `<p class="random-reward">${colorText(randomSummary(id))}</p>`;
+  }
+  function outcomeRows(outcomes, option) {
+    const rows = new Map();
+    outcomes.forEach((v, index) => {
+      const colors = P.colors.filter(c => v[c] > 0), key = colors.join(' ');
+      if (!rows.has(key)) rows.set(key, { colors, options: [] });
+      rows.get(key).options.push(option(v, index, fmt(Math.max(...colors.map(c => v[c])))));
+    });
+    return `<div class="reward-rows">${[...rows.values()].map(({ colors, options }) => `<div class="reward-row"><span class="reward-row-color ${colors.length === 1 ? colors[0] : ''}">${colors.length === 4 ? '四色各' : colors.map(c => names[c]).join('／')}</span><div class="reward-amounts">${options.join('')}</div></div>`).join('')}</div>`;
   }
   function manualMarkup(prefix, values = emptyInputs()) { return `<div class="manual-grid">${P.colors.map(c => `<label>${names[c]}实得数量<input id="${prefix}-${c}" type="number" min="0" max="1000000000" step="1" value="${esc(values[c])}" placeholder="未获得可留空"></label>`).join('')}</div>`; }
   function readActual(values) {
@@ -62,7 +88,7 @@
   }
   function makeDraft() {
     const t = activeType(), e = reference(t);
-    if (!t) throw Error('请先选择 NPC 类型和具体关卡。');
+    if (!t) throw Error('请先选择具体 NPC 或关卡。');
     if (['story', 'dialogue'].includes(t) && !e && selectedRef !== 'custom' && !(t === 'story' && selectedRef === 'tricolor')) throw Error('请选择具体 NPC，或选择未收录入口。');
     const n = { id: 'preview', type: t, label: typeNames[t] || (t === 'midterm' ? '期中考试（最高难度）' : '期末考试（最高难度）'), colors: [], round: s.round, status: 'available', stage: 1, chain: 'rocket', values: null, scaled: false };
     if (e) n.label = e.name + ' · ' + e.title;
@@ -90,40 +116,76 @@
     else if (['midterm', 'final'].includes(t)) { n.examPassed = examPassed; if (!examPassed) n.label += ' · 未通过'; }
     return n;
   }
+  function npcButton(type, value, label, detail = '') {
+    const selected = selectedType === type && (type === 'battle' ? battleKind === value : ['story', 'dialogue'].includes(type) ? selectedRef === value : true);
+    return `<button type="button" class="npc-choice" data-npc="${type}" data-choice="${value}" aria-pressed="${selected}"><span>${esc(label)}</span>${detail ? `<small>${esc(detail)}</small>` : ''}</button>`;
+  }
+  function renderNpcPicker() {
+    $('npc-categories').innerHTML = Object.entries(groupNames).map(([group, label]) => `<button type="button" class="${group === 'custom' ? 'quiet npc-custom' : 'npc-category'}" data-group="${group}" aria-pressed="${selectedGroup === group}">${label}</button>`).join('');
+    const storyGroup = ['fixed', 'random'].includes(selectedGroup);
+    let html = '';
+    if (selectedGroup === 'battle') {
+      html = ['triple', 'red', 'kukui', 'principal', 'double', 'single'].map(t => {
+        const b = N.battles.find(item => item.id === t);
+        if (b) {
+          const amounts = b.amounts.map(base => P.reward(s, { type: 'battle', values: { ...P.vector(), blue: base }, scaled: true }).gain.blue);
+          return npcButton('battle', b.id, b.name, (b.count === 1 ? '单色 ' : '每色 ') + amounts.map(fmt).join('／'));
+        }
+        const r = P.reward(s, { type: t, colors: ['blue'] });
+        return npcButton(t, '', typeNames[t], (t === 'red' ? '黄 ' + fmt(r.gain.yellow) : '单色 ' + fmt(r.gain.blue)) + (r.tmGain ? ' · 银' + fmt(r.tmGain) : ''));
+      }).join('');
+    } else if (selectedGroup === 'special') {
+      html = Object.entries(chains).map(([id, item]) => {
+        const next = P.nextStage(s, id), count = P.stageCount(id);
+        return npcButton('battle', id, item.name, next > count ? '全部阶段已完成' : '第' + next + ' / ' + count + '阶段');
+      }).join('');
+    } else if (storyGroup) {
+      const stories = N.forRound('story', s.round, !onlyCurrentRound), dialogues = D.forRound(s.round, !onlyCurrentRound);
+      if (['story', 'dialogue'].includes(selectedType) && selectedRef !== 'tricolor' && ![...stories, ...dialogues].some(e => e.id === selectedRef)) clearSelection();
+      html = (selectedGroup === 'fixed' ? [
+        ['0', '固定三色', npcButton('story', 'tricolor', '三色剧情', '任选三色，各 +' + fmt(s.rules.story3)) + npcButton('blue', '', '青绿', '四色各 ' + fmt(P.reward(s, { type: 'blue' }).gain.red))],
+        ['1', '固定单色', stories.map(e => npcButton('story', e.id, e.name, e.colors.map(c => names[c] + ' +' + fmt(e.base)).join(' ／ '))).join('')]
+      ] : [
+        ['2', '休息时间', dialogues.filter(e => e.id.startsWith('break')).map(e => npcButton('dialogue', e.id, e.name, compactPrize(e.id))).join('')],
+        ['3', '普通事件', npcButton('oak', '', '大木', compactPrize('oak')) + dialogues.filter(e => !e.id.startsWith('break')).map(e => npcButton('dialogue', e.id, e.name, compactPrize(e.id))).join('')]
+      ]).map(([id, title, content]) => `<details class="npc-section" data-section="${id}" ${closedSections.has(id) ? '' : 'open'}><summary><h3>${title}</h3></summary><div class="npc-choice-grid" role="group" aria-label="${title}">${content || '<p class="muted">本回合暂无资料项</p>'}</div></details>`).join('');
+    }
+    $('npc-list').innerHTML = (storyGroup ? `<label class="dialogue-toggle npc-show-all"><input id="reference-current" type="checkbox" ${onlyCurrentRound ? 'checked' : ''}>仅看当前回合</label>` : selectedGroup === 'special' ? '<p class="color-caption">连续对战有额外奖励，后续出现不保证。</p>' : '') + (storyGroup ? html : html ? `<div class="npc-choice-grid" role="group" aria-label="${groupNames[selectedGroup]} NPC">${html}</div>` : '');
+  }
   function renderReference(t) {
-    const available = t === 'dialogue' ? D.forRound(s.round, showAll) : N.forRound(t, s.round, showAll);
-    if (selectedRef !== 'custom' && !(t === 'story' && selectedRef === 'tricolor') && !available.some(e => e.id === selectedRef)) { selectedRef = ''; actualIndex = ''; }
     const e = reference(t);
-    let html = `<div class="dialogue-picker"><label>具体 ${t === 'battle' ? '对战' : t === 'story' ? '剧情' : '对话'} NPC<select id="npc-reference"><option value="">请选择 NPC / 关卡</option>${t === 'story' ? `<option value="tricolor" ${selectedRef === 'tricolor' ? 'selected' : ''}>三色剧情</option>` : ''}${available.map(item => `<option value="${item.id}" ${item.id === selectedRef ? 'selected' : ''}>${esc(item.name)} · ${esc(item.title)}${item.period && item.period !== '通用' ? '（' + esc(item.period) + '）' : ''}</option>`).join('')}<option value="custom" ${selectedRef === 'custom' ? 'selected' : ''}>未收录 / 手动补录实得</option></select></label><label class="dialogue-toggle"><input id="reference-all" type="checkbox" ${showAll ? 'checked' : ''}>查看全部回合</label></div>`;
+    let html = '';
     if (t === 'story' && selectedRef === 'tricolor') return html + `<p class="color-caption">滴晶颜色（选3种）</p><div class="color-choices">${P.colors.map(c => `<label><input type="checkbox" data-story-color="${c}" ${storyColors.includes(c) ? 'checked' : ''}><i class="gem ${c}"></i>${names[c]}</label>`).join('')}</div>`;
     if (e) {
       const when = e.when || '第' + e.rounds.join('、') + '回合';
-      html += `<div class="dialogue-detail"><p class="event-meta">${esc(e.place || '中庭')} · ${esc(when)}</p>${e.rounds.includes(s.round) ? '' : '<p class="dialogue-warning">不在表内当前回合范围。</p>'}${e.period && e.period !== '通用' ? '<p class="dialogue-warning">' + esc(e.period) + '限定内容，不保证本期出现。</p>' : ''}`;
+      html += `${e.rounds.includes(s.round) ? '' : '<p class="dialogue-warning">不在表内当前回合范围。</p>'}${e.period && e.period !== '通用' ? '<p class="dialogue-warning">' + esc(e.period) + '限定内容，不保证本期出现。</p>' : ''}<details class="dialogue-detail" open><summary>游戏选项与奖励资料</summary><p class="event-meta">${esc(e.place || '中庭')} · ${esc(when)}</p>`;
       if (t === 'dialogue') html += `<p>${esc(e.question)}</p>${rewardTable(e)}`;
-      html += (e.note ? `<details class="dialogue-note"><summary>资料备注</summary><p>${esc(e.note)}</p></details>` : '') + '</div>';
+      html += (e.note ? `<p class="dialogue-note">${esc(e.note)}</p>` : '') + '</details>';
     }
     return html;
   }
   function renderComposer() {
+    const focused = document.activeElement;
+    renderNpcPicker();
     const t = activeType(), exam = ['midterm', 'final'].includes(t);
     $('npc-kind-row').hidden = exam; $('choice-title').textContent = exam ? '第' + s.round + '回合 · ' + (t === 'midterm' ? '期中考试' : '期末考试') : '这一回合，选择谁？';
     let html = '';
     if (['story', 'dialogue'].includes(t)) html = renderReference(t);
     else if (t === 'battle') {
-      html = `<label>对战选项<select id="battle-kind">${[...N.battles, ...Object.entries(chains).map(([id, item]) => ({ id, name: item.name + '（连续对战能有额外奖励）' }))].map(item => `<option value="${item.id}" ${battleKind === item.id ? 'selected' : ''}>${item.name}</option>`).join('')}</select></label>`;
       if (chains[battleKind]) {
         if (P.nextStage(s, battleKind) > P.stageCount(battleKind)) html += '<p class="muted">全部阶段已完成</p>';
-      } else html += `${battleKind === 'single' ? `<label>单色档位<select id="single-base"><option value="60" ${singleBase === 60 ? 'selected' : ''}>特训 · 基础60</option><option value="30" ${singleBase === 30 ? 'selected' : ''}>练习 · 基础30</option></select></label>` : ''}<p class="color-caption">滴晶颜色（选${N.battles.find(b => b.id === battleKind).count}种）</p><div class="color-choices">${P.colors.map(c => `<label><input type="checkbox" data-battle-color="${c}" ${battleColors.includes(c) ? 'checked' : ''}><i class="gem ${c}"></i>${names[c]}</label>`).join('')}</div>`;
+      } else html += `${battleKind === 'single' ? `<fieldset class="direct-choices"><legend>单色档位</legend><div class="option-radios">${[[60, '特训'], [30, '练习']].map(([base, label]) => `<label><input id="single-base-${base}" type="radio" name="single-base" value="${base}" ${singleBase === base ? 'checked' : ''}><span>${label} · 基础${base}</span></label>`).join('')}</div></fieldset>` : ''}<p class="color-caption">滴晶颜色（选${N.battles.find(b => b.id === battleKind).count}种）</p><div class="color-choices">${P.colors.map(c => `<label><input type="checkbox" data-battle-color="${c}" ${battleColors.includes(c) ? 'checked' : ''}><i class="gem ${c}"></i>${names[c]}</label>`).join('')}</div>`;
     }
     const e = reference(t), randomId = t === 'oak' ? 'oak' : t === 'dialogue' && e ? e.id : null;
     if (randomId) {
       if (t === 'oak') html += '<p class="event-meta">第7–11回合 · 中庭</p>';
       const outcomes = D.outcomes(randomId);
-      html += `<label class="actual-result">实得奖励<select id="actual-outcome"><option value="">请选择实际奖励</option>${outcomes.map((v, i) => `<option value="${i}" ${actualIndex === String(i) ? 'selected' : ''}>${esc(gainText(v))}</option>`).join('')}</select></label>`;
+      const picker = t === 'oak' ? `<div class="option-radios">${outcomes.map((v, i) => `<label><input id="actual-outcome-${i}" type="radio" name="actual-outcome" value="${i}" ${actualIndex === String(i) ? 'checked' : ''}><span>${esc(outcomeText(v))}</span></label>`).join('')}</div>` : outcomeRows(outcomes, (v, i, amount) => `<label class="reward-amount" for="actual-outcome-${i}"><input id="actual-outcome-${i}" type="radio" name="actual-outcome" value="${i}" ${actualIndex === String(i) ? 'checked' : ''} aria-label="${esc(outcomeText(v))}"><span>${amount}</span></label>`);
+      html += `<fieldset class="direct-choices"><legend>实得奖励</legend>${picker}</fieldset>`;
     } else if (t === 'custom' || (['story', 'dialogue'].includes(t) && selectedRef === 'custom')) {
       html += manualMarkup('actual', manualValues);
       if (t === 'custom') html += `<label class="manual-scale"><input id="actual-scaled" type="checkbox" ${manualScaled ? 'checked' : ''}>输入的是基础值，需要乘队伍倍率</label>`;
-    } else if (['kukui', 'principal'].includes(t)) html += `<label>奖励颜色<select id="reward-color">${P.colors.map(c => `<option value="${c}" ${selectedColor === c ? 'selected' : ''}>${names[c]}</option>`).join('')}</select></label>${t === 'kukui' ? '<p class="event-meta">入口 · 第1–5回合</p>' : ''}`;
+    } else if (['kukui', 'principal'].includes(t)) html += `<fieldset class="reward-colors"><legend>奖励颜色</legend><div class="color-choices">${P.colors.map(c => `<label><input id="reward-color-${c}" type="radio" name="reward-color" value="${c}" ${selectedColor === c ? 'checked' : ''}><i class="gem ${c}" aria-hidden="true"></i>${names[c]}</label>`).join('')}</div></fieldset>${t === 'kukui' ? '<p class="event-meta">入口 · 第1–5回合</p>' : ''}`;
     else if (exam) html += `<label class="manual-scale"><input id="exam-passed" type="checkbox" ${examPassed ? 'checked' : ''}>考试通过</label>`;
     $('npc-options').innerHTML = html;
     const claimed = s.candidates.some(n => n.round === s.round && n.status === 'claimed');
@@ -131,16 +193,20 @@
     $('confirm-npc').disabled = !ready || claimed; $('add-choice').disabled = !ready || exam || claimed;
     $('add-choice').hidden = exam;
     renderPreview();
+    if (focused && !focused.isConnected) {
+      const replacement = focused.id ? $(focused.id) : [...$('npc-form').querySelectorAll('[data-group], [data-npc], [data-battle-color], [data-story-color]')].find(b => Object.keys(focused.dataset).length && Object.entries(focused.dataset).every(([key, value]) => b.dataset[key] === value));
+      replacement?.focus({ preventScroll: true });
+    }
   }
   function renderPreview() {
     let n; try { n = makeDraft(); } catch { $('choice-preview').innerHTML = ''; return; }
     const r = P.evaluate(s, n);
-    $('choice-preview').innerHTML = `${n.type === 'special' ? '<strong>' + esc(n.label) + '</strong>' : ''}${r.known ? `<div class="gains">${gains(r.gain)}${tmBadge(r.tmGain)}</div>${['midterm', 'final'].includes(n.type) ? '' : `<p>补缺 ${fmt(r.useful)} · 溢出 ${fmt(r.waste)}${r.tmGain ? ' · 银色补缺 ' + r.tmUseful : ''}</p>`}<details><summary>计算过程</summary><div class="formula">${formula(r)}</div></details>${futureReward(n)}` : `<p>${colorText(randomSummary(n.randomId))}</p>`}`;
+    $('choice-preview').innerHTML = `${n.type === 'special' ? '<strong>' + esc(n.label) + '</strong>' : ''}${r.known ? `<div class="gains">${gains(r.gain)}${tmBadge(r.tmGain)}</div>${['midterm', 'final'].includes(n.type) ? '' : `<p>补缺 ${fmt(r.useful)} · 溢出 ${fmt(r.waste)}${r.tmGain ? ' · 银色补缺 ' + r.tmUseful : ''}</p>`}<details><summary>计算过程</summary><div class="formula">${formula(r)}</div></details>${futureReward(n)}` : n.randomId !== 'oak' && D.prizes[n.randomId] ? '' : `<p>${colorText(randomSummary(n.randomId))}</p>`}`;
   }
   function resultMarkup(n) {
     const outcomes = D.outcomes(n.randomId);
-    if (outcomes.length && outcomes.length <= 8) return `<div class="outcome-buttons">${outcomes.map((v, i) => `<button class="primary" type="button" data-result="${n.id}" data-index="${i}">确认 ${esc(gainText(v))}</button>`).join('')}</div>`;
-    if (outcomes.length) return `<label>实际获得<select id="result-${n.id}"><option value="">请选择实际奖励</option>${outcomes.map((v, i) => `<option value="${i}">${esc(gainText(v))}</option>`).join('')}</select></label><button class="primary" type="button" data-result-select="${n.id}">按选中结果确认</button>`;
+    if (n.randomId === 'oak') return `<div class="outcome-buttons">${outcomes.map((v, i) => `<button class="primary" type="button" data-result="${n.id}" data-index="${i}">确认 ${esc(outcomeText(v))}</button>`).join('')}</div>`;
+    if (outcomes.length) return outcomeRows(outcomes, (v, i, amount) => `<button type="button" data-result="${n.id}" data-index="${i}" aria-label="确认 ${esc(outcomeText(v))}">${amount}</button>`);
     return manualMarkup('result-' + n.id) + `<button class="primary" type="button" data-result-manual="${n.id}">按实得确认</button>`;
   }
   function renderDrafts() {
@@ -170,7 +236,8 @@
     $('share-rating').textContent = share.rating.grade; $('share-rating').style.color = share.rating.color;
     $('share-earned').textContent = fmt(share.total);
     $('boost-options').innerHTML = ['A', 'B', 'C', 'D', 'custom'].map(b => `<button class="boost-option ${s.boost === b ? 'active' : ''}" data-boost="${b}" aria-pressed="${s.boost === b}">${b === 'custom' ? '自定义' : b === 'D' ? '最低组合' : b + '组合'}<strong>×${fmt(b === 'custom' ? s.customMultiplier : s.rules.boosts[b])}</strong></button>`).join('');
-    $('active-factor').textContent = '×' + fmt(P.multiplier(s)); $('custom-factor-row').hidden = s.boost !== 'custom'; $('custom-factor').value = s.customMultiplier; $('round').value = s.round;
+    $('active-factor').textContent = '×' + fmt(P.multiplier(s)); $('custom-factor-row').hidden = s.boost !== 'custom'; $('custom-factor').value = s.customMultiplier;
+    $('round').value = s.round; $('round-progress').value = s.round;
     const finished = s.round === 12 && s.candidates.some(n => n.round === 12 && n.status === 'claimed');
     $('round-status').textContent = finished ? '本轮结束' : ''; $('round-status').hidden = !finished;
     $('ledger').innerHTML = [...s.ledger].reverse().map(row => { const npc = s.candidates.find(n => n.id === row.id), round = row.roundBefore ?? npc?.round; return `<div class="ledger-row"><div>${row.kind === 'claim' ? '第' + round + '回合 · ' : ''}${esc(row.label)}<small>${esc(new Date(row.at).toLocaleString('zh-CN'))}</small></div><div class="ledger-values">${row.kind === 'claim' ? `${gains(row.gain)}${tmBadge(row.tmGain)}<details><summary>领取时计算</summary><div class="formula">${formula(row, row.rounding)}</div></details>` : P.colors.map(c => names[c] + ' ' + fmt(row.before[c]) + ' → ' + fmt(row.after[c])).join(' ／ ') + (row.tmAfter !== undefined ? ' ／ 银色 ' + fmt(row.tmBefore) + ' → ' + fmt(row.tmAfter) : '')}</div></div>`; }).join('') || '<div class="empty">暂无记录</div>';
@@ -180,20 +247,36 @@
     const { randomId, ...selected } = n;
     if (change(next => P.recordChoice(next, { ...selected, id: crypto.randomUUID() }))) { drafts = []; openReward = null; resetComposer(); render(); toast(s.candidates.some(item => item.round === 12 && item.status === 'claimed') ? '已入账，本轮结束。' : '已入账，进入第' + s.round + '回合。'); }
   }
-  $('npc-type').innerHTML = '<option value="">请选择 NPC 类型</option>' + Object.entries(typeNames).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
   $('round').innerHTML = Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join('');
   $('rating-tiers').innerHTML = S.tiers.map((tier, i) => `<tr><td>${tier.grade}</td><td>${fmt(tier.min)}${S.tiers[i + 1] ? '–' + fmt(S.tiers[i + 1].min - 1) : '及以上'}</td></tr>`).join('');
-  $('npc-type').addEventListener('change', () => { const t = $('npc-type').value; resetComposer(); $('npc-type').value = t; renderComposer(); });
+  $('npc-categories').addEventListener('click', e => {
+    const b = e.target.closest('[data-group]'); if (!b || b.dataset.group === selectedGroup) return;
+    clearSelection(); selectedGroup = b.dataset.group;
+    if (selectedGroup === 'custom') selectedType = 'custom';
+    renderComposer();
+  });
+  $('npc-list').addEventListener('click', e => {
+    const b = e.target.closest('[data-npc]'); if (!b) return;
+    if (b.getAttribute('aria-pressed') === 'true') return;
+    clearSelection(); selectedType = b.dataset.npc;
+    if (selectedType === 'battle') { battleKind = b.dataset.choice; battleColors = battleKind === 'single' ? ['blue'] : battleKind === 'double' ? ['red', 'blue'] : ['red', 'blue', 'yellow']; }
+    else selectedRef = b.dataset.choice;
+    renderComposer();
+  });
+  $('npc-list').addEventListener('change', e => { if (e.target.id === 'reference-current') { onlyCurrentRound = e.target.checked; renderComposer(); } });
+  $('npc-list').addEventListener('toggle', e => {
+    const section = e.target;
+    if (!section.isConnected || !section.matches('.npc-section')) return;
+    if (section.open) closedSections.delete(section.dataset.section);
+    else closedSections.add(section.dataset.section);
+  }, true);
   $('round').addEventListener('change', () => { drafts = []; openReward = null; const round = Number($('round').value); change(next => { next.round = round; resetComposer(next); }); });
   $('npc-options').addEventListener('change', e => {
     const id = e.target.id;
-    if (id === 'npc-reference') { selectedRef = e.target.value; actualIndex = ''; manualValues = emptyInputs(); renderComposer(); }
-    else if (id === 'reference-all') { showAll = e.target.checked; renderComposer(); }
-    else if (id === 'actual-outcome') { actualIndex = e.target.value; renderPreview(); }
-    else if (id === 'reward-color') { selectedColor = e.target.value; renderPreview(); }
-    else if (id === 'battle-kind') { battleKind = e.target.value; battleColors = battleKind === 'single' ? ['blue'] : battleKind === 'double' ? ['red', 'blue'] : ['red', 'blue', 'yellow']; renderComposer(); }
+    if (e.target.name === 'actual-outcome') { actualIndex = e.target.value; renderPreview(); }
+    else if (e.target.name === 'reward-color') { selectedColor = e.target.value; renderPreview(); }
     else if (e.target.dataset.storyColor) { storyColors = [...$('npc-options').querySelectorAll('[data-story-color]:checked')].map(input => input.dataset.storyColor); renderComposer(); }
-    else if (id === 'single-base') { singleBase = Number(e.target.value); renderPreview(); }
+    else if (e.target.name === 'single-base') { singleBase = Number(e.target.value); renderPreview(); }
     else if (e.target.dataset.battleColor) { battleColors = [...$('npc-options').querySelectorAll('[data-battle-color]:checked')].map(input => input.dataset.battleColor); renderComposer(); }
     else if (id === 'actual-scaled') { manualScaled = e.target.checked; renderPreview(); }
     else if (id === 'exam-passed') { examPassed = e.target.checked; renderPreview(); }
@@ -206,11 +289,11 @@
   $('add-choice').addEventListener('click', () => { try { const n = makeDraft(); drafts.push({ ...structuredClone(n), id: crypto.randomUUID() }); renderDrafts();  } catch (error) { toast(error.message, true); } });
   $('temp-choices').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
-    const id = b.dataset.claim || b.dataset.remove || b.dataset.result || b.dataset.resultSelect || b.dataset.resultManual, n = drafts.find(item => item.id === id); if (!n) return;
+    const id = b.dataset.claim || b.dataset.remove || b.dataset.result || b.dataset.resultManual, n = drafts.find(item => item.id === id); if (!n) return;
     try {
       if (b.dataset.remove) { drafts = drafts.filter(item => item.id !== id); renderDrafts(); }
       else if (b.dataset.claim) { if (P.reward(s, n).known) commit(n); else { openReward = id; renderDrafts(); } }
-      else if (b.dataset.result || b.dataset.resultSelect) { const raw = b.dataset.result ? b.dataset.index : $('result-' + id).value; if (raw === '') throw Error('请选择实际获得的奖励。'); const v = D.outcomes(n.randomId)[Number(raw)]; if (!v) throw Error('请选择有效奖励。'); commit({ ...n, values: v, scaled: false }); }
+      else if (b.dataset.result) { const raw = b.dataset.index; if (raw === '' || raw === undefined) throw Error('请选择实际获得的奖励。'); const v = D.outcomes(n.randomId)[Number(raw)]; if (!v) throw Error('请选择有效奖励。'); commit({ ...n, values: v, scaled: false }); }
       else if (b.dataset.resultManual) { const values = Object.fromEntries(P.colors.map(c => [c, $('result-' + id + '-' + c).value])); commit({ ...n, values: readActual(values) }); }
     } catch (error) { toast(error.message, true); }
   });

@@ -35,7 +35,7 @@
       ctx.fillStyle = '#ffffff38'; ctx.beginPath(); ctx.moveTo(x + 17, y); ctx.lineTo(x + 34, y + 20); ctx.lineTo(x + 28, y + 46); ctx.lineTo(x + 17, y + 58); ctx.closePath(); ctx.fill();
     }
     rect(0, 0, 1080, 1600, ink);
-    text('帕希欧学院 · 武道熊师', 72, 100, 35, white, '600');
+    text('帕希欧学院 · 滴晶收获', 72, 100, 35, white, '600');
     text(`本轮已记录获得 · ${data.rounds} / 12 回合`, 72, 155, 26, muted);
     text('四色累计', 72, 242, 29, muted);
     text(fmt(data.total), 72, 355, 112, lime, '600', 'left', 660);

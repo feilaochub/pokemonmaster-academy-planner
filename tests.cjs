@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 const P = require('./dist/engine.js');
 const D = require('./dist/dialogues.js');
 const N = require('./dist/npcs.js');
+const fs = require('node:fs');
+const vm = require('node:vm');
 let count = 0;
 function test(name, fn) { fn(); count++; console.log('PASS ' + name); }
 function npc(type, options = {}) {
@@ -526,4 +528,369 @@ test('reported4073 harvest ranks S and inventory changes do not turn it into spe
   P.undo(loaded); P.undo(loaded);
   assert.equal(Share.summary(loaded).total, 0); assert.equal(Share.summary(loaded).rating.grade, 'D');
 });
+function appUi(state = P.defaults()) {
+  const elements = new Map();
+  const element = id => {
+    if (!elements.has(id)) elements.set(id, { innerHTML: '', value: '', style: {}, listeners: {},
+      addEventListener(event, listener) { this.listeners[event] = listener; } });
+    return elements.get(id);
+  };
+  let saved = JSON.stringify(state);
+  vm.runInNewContext(fs.readFileSync(require.resolve('./dist/app.js'), 'utf8'), {
+    window: { Pasio: P, PasioDialogues: D, PasioNpcs: N, PasioShare: Share },
+    document: { getElementById: element, activeElement: null },
+    localStorage: { getItem: () => saved, setItem: (_key, value) => { saved = value; } },
+    structuredClone, crypto: require('node:crypto').webcrypto, setTimeout: () => 0, clearTimeout() {}
+  });
+  const fire = (id, event, target = {}) => element(id).listeners[event]({ target: { dataset: {}, ...target }, preventDefault() {} });
+  const click = (id, dataset, section = null) => fire(id, 'click', { closest: () => ({ dataset, getAttribute: () => 'false', closest: () => section === null ? null : { dataset: { section } } }) });
+  return { element, fire, group: group => click('npc-categories', { group }),
+    choose: (npc, choice = '', section = null) => click('npc-list', { npc, choice }, section),
+    confirm: () => fire('npc-form', 'submit'), saved: () => JSON.parse(saved) };
+}
+
+test('visible NPC groups retain legacy reward types and clear each claimed selection', () => {
+  for (const [group, type, each, silver] of [
+    ['battle', 'kukui', 315, 1], ['battle', 'principal', 315, 1],
+    ['battle', 'red', 525, 0], ['fixed', 'blue', 400, 0], ['random', 'oak', 30, 0]
+  ]) {
+    const ui = appUi(); ui.group(group); ui.choose(type);
+    if (type === 'oak') ui.fire('npc-options', 'change', { name: 'actual-outcome', value: '0' });
+    ui.confirm();
+    const saved = ui.saved();
+    assert.equal(saved.candidates[0].type, type); assert.equal(saved.round, 2);
+    assert.equal(saved.ledger[0].gain[type === 'red' ? 'yellow' : 'blue'], each);
+    assert.equal(P.totals(saved).tm.current, silver);
+    assert.match(ui.element('npc-categories').innerHTML, new RegExp(`data-group="${group}" aria-pressed="true"`));
+    assert.doesNotMatch(ui.element('npc-list').innerHTML, /aria-pressed="true"/);
+    assert.equal(ui.element('choice-preview').innerHTML, '');
+    assert.equal(ui.element('confirm-npc').disabled, true);
+    ui.confirm(); assert.deepEqual(ui.saved(), saved);
+  }
+});
+
+test('button choices preserve ordinary battles, story references and independent chain stages', () => {
+  const ui = appUi(); ui.choose('battle', 'triple'); ui.confirm();
+  ui.group('fixed'); ui.choose('story', 'tricolor'); ui.confirm();
+  ui.choose('story', 'story-common-0'); ui.confirm();
+  ui.group('special'); ui.choose('battle', 'rocket'); ui.confirm();
+  ui.choose('battle', 'rocket'); ui.confirm();
+  const saved = ui.saved();
+  assert.deepEqual(saved.candidates.map(n => n.type), ['battle', 'story3', 'story', 'special', 'special']);
+  assert.deepEqual(saved.candidates.slice(-2).map(n => n.stage), [1, 2]);
+  assert.equal(saved.round, 6); assert.equal(ui.element('npc-kind-row').hidden, true);
+  assert.equal(ui.element('team-bonus').hidden, true);
+  ui.confirm();
+  assert.equal(ui.saved().candidates.at(-1).type, 'midterm'); assert.equal(ui.saved().round, 7);
+  assert.equal(ui.element('npc-kind-row').hidden, false);
+  assert.match(ui.element('npc-categories').innerHTML, /data-group="special" aria-pressed="true"/);
+  assert.equal(ui.element('confirm-npc').disabled, true);
+});
+
+test('round filtering, comparison confirmation and old receipts survive the new picker', () => {
+  const state = P.defaults(); P.recordChoice(state, npc('principal')); state.round = 8;
+  const receipts = structuredClone(state.ledger), ui = appUi(state);
+  ui.group('fixed');
+  assert.doesNotMatch(ui.element('npc-list').innerHTML, /story-common-0/);
+  ui.fire('npc-list', 'change', { id: 'reference-current', checked: false });
+  assert.match(ui.element('npc-list').innerHTML, /story-common-0/);
+  ui.choose('story', 'story-common-0');
+  ui.fire('npc-list', 'change', { id: 'reference-current', checked: true });
+  assert.equal(ui.element('confirm-npc').disabled, true);
+  ui.group('random'); ui.choose('dialogue', 'gloria'); ui.fire('add-choice', 'click');
+  assert.deepEqual(ui.saved().ledger, receipts);
+  const id = /data-claim="([^"]+)"/.exec(ui.element('temp-choices').innerHTML)[1];
+  ui.fire('temp-choices', 'click', { closest: () => ({ dataset: { result: id, index: '1' } }) });
+  const saved = ui.saved(); assert.equal(saved.candidates.at(-1).type, 'dialogue');
+  assert.equal(saved.ledger.at(-1).gain.blue, 450); assert.deepEqual(saved.ledger[0], receipts[0]);
+  assert.match(ui.element('npc-categories').innerHTML, /data-group="random" aria-pressed="true"/);
+  assert.equal(ui.element('confirm-npc').disabled, true);
+  ui.fire('undo', 'click'); assert.deepEqual(ui.saved().ledger, receipts);
+  assert.equal(ui.saved().round, 8); assert.equal(ui.saved().stock.blue, 315);
+});
+test('story and dialogue pickers allow the full existing catalogue when round filtering is disabled', () => {
+  const ui = appUi(); ui.group('fixed');
+  ui.fire('npc-list', 'change', { id: 'reference-current', checked: false });
+  for (const event of N.events) assert.ok(ui.element('npc-list').innerHTML.includes(`data-choice="${event.id}"`), 'Missing story: ' + event.name);
+  assert.match(ui.element('npc-list').innerHTML, /data-npc="blue"/);
+  assert.match(ui.element('npc-list').innerHTML, /data-choice="tricolor"/);
+  ui.group('random');
+  for (const event of D.events) assert.ok(ui.element('npc-list').innerHTML.includes(`data-choice="${event.id}"`), 'Missing dialogue: ' + event.name);
+  assert.match(ui.element('npc-list').innerHTML, /data-npc="oak"/);
+});
+test('special battles have their own category without losing stages or the active category', () => {
+  const state = P.defaults(); state.round = 3;
+  const ui = appUi(state); ui.group('battle');
+  for (const chain of Object.keys(P.specialDefs)) assert.ok(!ui.element('npc-list').innerHTML.includes(`data-choice="${chain}"`));
+  ui.group('special');
+  for (const chain of Object.keys(P.specialDefs)) assert.ok(ui.element('npc-list').innerHTML.includes(`data-choice="${chain}"`));
+  ui.choose('battle', 'rocket'); ui.confirm();
+  assert.equal(ui.saved().candidates.at(-1).type, 'special');
+  assert.equal(ui.saved().candidates.at(-1).stage, 1);
+  assert.match(ui.element('npc-list').innerHTML, /第2 \/ 3阶段/);
+  assert.match(ui.element('npc-categories').innerHTML, /data-group="special" aria-pressed="true"/);
+  assert.equal(ui.element('confirm-npc').disabled, true);
+  ui.fire('undo', 'click'); assert.match(ui.element('npc-list').innerHTML, /第1 \/ 3阶段/);
+});
+test('fixed and random story tabs have the requested order, open sections and one entry per existing NPC', () => {
+  const ui = appUi(), before = ui.saved(); ui.group('fixed');
+  ui.fire('npc-list', 'change', { id: 'reference-current', checked: false });
+  assert.deepEqual([...ui.element('npc-categories').innerHTML.matchAll(/data-group="([^"]+)"/g)].map(match => match[1]), ['battle', 'fixed', 'random', 'special', 'custom']);
+  const tabs = [];
+  for (const [group, titles, counts] of [
+    ['fixed', ['固定三色', '固定单色'], [2, 5]],
+    ['random', ['休息时间', '普通事件'], [4, 9]]
+  ]) {
+    ui.group(group);
+    const html = ui.element('npc-list').innerHTML; tabs.push(html);
+    assert.deepEqual([...html.matchAll(/<h3>(.*?)<\/h3>/g)].map(match => match[1]), titles);
+    const sections = [...html.matchAll(/<details class="npc-section"[^>]*>(.*?)<\/details>/g)].map(match => match[1]);
+    assert.deepEqual(sections.map(section => [...section.matchAll(/data-npc=/g)].length), counts);
+    assert.equal([...html.matchAll(/data-section="\d" open>/g)].length, 2);
+    const firstGroup = [...sections[0].matchAll(/data-npc="([^"]+)" data-choice="([^"]*)"/g)].map(match => match[1] + ':' + match[2]);
+    if (group === 'fixed') assert.deepEqual(firstGroup, ['story:tricolor', 'blue:']);
+    else assert.match(sections[1], /^<summary>.*?<div[^>]*><button[^>]*data-npc="oak"/);
+  }
+  const entries = [...tabs.join('').matchAll(/data-npc="([^"]+)" data-choice="([^"]*)"/g)].map(match => match[1] + ':' + match[2]);
+  assert.equal(entries.length, 20); assert.equal(new Set(entries).size, 20);
+  for (const event of N.events) assert.ok(entries.includes('story:' + event.id));
+  for (const event of D.events) assert.ok(entries.includes('dialogue:' + event.id));
+  assert.ok(entries.includes('oak:')); assert.ok(entries.includes('blue:'));
+  assert.ok(!entries.some(entry => entry.endsWith(':custom')));
+  assert.doesNotMatch(ui.element('npc-categories').innerHTML, /剧情 \/ 对话/);
+  assert.deepEqual(ui.saved(), before);
+});
+
+test('NPC section folding survives same-round redraws and resets after a claim', () => {
+  const ui = appUi(); ui.group('fixed');
+  const before = ui.saved();
+  ui.fire('npc-list', 'toggle', { isConnected: true, matches: () => true, dataset: { section: '0' }, open: false });
+  ui.group('battle'); ui.group('fixed');
+  assert.match(ui.element('npc-list').innerHTML, /data-section="0"\s*>/);
+  assert.deepEqual(ui.saved(), before);
+  ui.choose('blue'); ui.confirm();
+  assert.equal(ui.saved().stock.blue, 400); assert.equal(ui.saved().round, 2);
+  assert.match(ui.element('npc-list').innerHTML, /data-section="0" open>/);
+  ui.fire('npc-list', 'toggle', { isConnected: false, matches: () => true, dataset: { section: '0' }, open: false });
+  ui.group('battle'); ui.group('fixed');
+  assert.match(ui.element('npc-list').innerHTML, /data-section="0" open>/);
+  ui.fire('npc-list', 'toggle', { isConnected: true, matches: () => true, dataset: { section: '0' }, open: false });
+  ui.group('battle'); ui.group('fixed');
+  assert.match(ui.element('npc-list').innerHTML, /data-section="0"\s*>/);
+});
+test('compact prize captions preserve color choices and full outcome tables without tier counts', () => {
+  const ui = appUi(); ui.group('random');
+  ui.fire('npc-list', 'change', { id: 'reference-current', checked: false });
+  const caption = id => new RegExp('data-choice="' + id + '"[^>]*>.*?<small>([^<]*)</small>').exec(ui.element('npc-list').innerHTML)[1];
+  assert.equal(caption('ball-guy'), '随机单色 420');
+  assert.equal(caption('grimsley'), '黄 30／450');
+  assert.equal(caption('brock'), '随机红／绿／蓝 30～450');
+  assert.equal(caption('n'), '可选红／绿 150～600');
+  assert.equal(caption('sycamore'), '可选蓝／黄 150～600');
+  for (const id of ['break1', 'break2']) assert.equal(caption(id), '可选四色 150～400');
+  for (const id of ['break3', 'break4']) assert.equal(caption(id), '可选红／绿／蓝 150～400');
+  assert.doesNotMatch(ui.element('npc-list').innerHTML, /\d+档/);
+  assert.match(ui.element('npc-list').innerHTML, /data-npc="oak".*?<small>四色各 30／400<\/small>/);
+  ui.choose('dialogue', 'n');
+  assert.match(ui.element('npc-options').innerHTML, /黑色/);
+  assert.match(ui.element('npc-options').innerHTML, /白色/);
+  assert.match(ui.element('npc-options').innerHTML, /150／300／450／600/);
+  ui.group('fixed');
+  assert.match(ui.element('npc-list').innerHTML, /data-npc="blue".*?<small>四色各 400<\/small>/);
+});
+test('battle captions follow current team rewards, rounding and unscaled silver without booking', () => {
+  const ui = appUi();
+  assert.deepEqual([...ui.element('npc-list').innerHTML.matchAll(/data-npc="([^"]+)" data-choice="([^"]*)"/g)].map(match => match[2] || match[1]), ['triple', 'red', 'kukui', 'principal', 'double', 'single']);
+  const caption = (type, choice = '') => new RegExp('data-npc="' + type + '" data-choice="' + choice + '"[^>]*>.*?<small>([^<]*)</small>').exec(ui.element('npc-list').innerHTML)[1];
+  assert.equal(caption('battle', 'single'), '单色 105／210');
+  assert.equal(caption('battle', 'double'), '每色 158');
+  assert.equal(caption('battle', 'triple'), '每色 140');
+  assert.equal(caption('kukui'), '单色 315 · 银1');
+  assert.equal(caption('principal'), '单色 315 · 银1');
+  assert.equal(caption('red'), '黄 525');
+  ui.fire('boost-options', 'click', { closest: () => ({ dataset: { boost: 'C' } }) });
+  assert.equal(caption('battle', 'single'), '单色 63／126');
+  assert.equal(caption('battle', 'double'), '每色 95');
+  assert.equal(caption('battle', 'triple'), '每色 84');
+  assert.equal(caption('kukui'), '单色 189 · 银1');
+  assert.equal(caption('red'), '黄 315');
+  assert.deepEqual(ui.saved().stock, P.vector()); assert.equal(ui.saved().ledger.length, 0);
+});
+test('teacher color radios preview directly and preserve confirmation, comparison and undo', () => {
+  const ui = appUi();
+  assert.doesNotMatch(ui.element('npc-options').innerHTML, /<select id="reward-color"/);
+  assert.equal([...ui.element('npc-options').innerHTML.matchAll(/name="reward-color"/g)].length, 4);
+  ui.fire('npc-options', 'change', { name: 'reward-color', value: 'red' });
+  assert.match(ui.element('choice-preview').innerHTML, /红色 \+315/);
+  assert.deepEqual(ui.saved().stock, P.vector()); assert.equal(ui.saved().ledger.length, 0);
+  ui.confirm(); assert.equal(ui.saved().stock.red, 315); assert.equal(ui.saved().round, 2);
+  ui.choose('kukui'); ui.fire('npc-options', 'change', { name: 'reward-color', value: 'green' });
+  ui.fire('add-choice', 'click');
+  const id = /data-claim="([^"]+)"/.exec(ui.element('temp-choices').innerHTML)[1];
+  ui.fire('temp-choices', 'click', { closest: () => ({ dataset: { claim: id } }) });
+  assert.equal(ui.saved().stock.green, 315); assert.equal(ui.saved().round, 3);
+  assert.equal(P.totals(ui.saved()).tm.current, 2);
+  assert.equal(ui.element('confirm-npc').disabled, true);
+  assert.equal(ui.element('npc-options').innerHTML, '');
+  ui.fire('undo', 'click'); assert.equal(ui.saved().stock.green, 0); assert.equal(ui.saved().round, 2);
+  ui.choose('principal'); assert.match(ui.element('npc-options').innerHTML, /value="blue" checked/);
+});
+test('round select and progress preserve exams while single-tier choices remain direct', () => {
+  const ui = appUi();
+  assert.deepEqual([...ui.element('round').innerHTML.matchAll(/<option value="(\d+)"/g)].map(match => Number(match[1])), Array.from({length:12}, (_, i) => i + 1));
+  assert.equal(ui.element('round-progress').value, 1);
+  ui.choose('battle', 'single');
+  assert.doesNotMatch(ui.element('npc-options').innerHTML, /<select/);
+  assert.equal([...ui.element('npc-options').innerHTML.matchAll(/name="single-base"/g)].length, 2);
+  ui.fire('npc-options', 'change', { name: 'single-base', value: '30' });
+  assert.match(ui.element('choice-preview').innerHTML, /蓝色 \+105/);
+  ui.confirm(); assert.equal(ui.saved().stock.blue, 105); assert.equal(ui.saved().round, 2);
+  ui.fire('undo', 'click'); assert.equal(ui.saved().stock.blue, 0);
+  ui.element('round').value = '6'; ui.fire('round', 'change');
+  assert.equal(ui.saved().round, 6); assert.equal(ui.element('npc-kind-row').hidden, true);
+  assert.equal(ui.element('round-progress').value, 6);
+  ui.element('round').value = '3'; ui.fire('round', 'change');
+  assert.equal(ui.saved().round, 3); assert.equal(ui.element('npc-kind-row').hidden, false);
+  assert.equal(ui.element('round-progress').value, 3);
+  assert.equal(ui.element('confirm-npc').disabled, true);
+});
+test('large prize pools offer every actual result directly with no preselection or stock mutation', () => {
+  const state = P.defaults(); state.round = 3;
+  const ui = appUi(state); ui.group('random'); ui.choose('dialogue', 'brock');
+  const html = ui.element('npc-options').innerHTML;
+  assert.doesNotMatch(html, /<select/);
+  assert.equal([...html.matchAll(/name="actual-outcome"/g)].length, 24);
+  assert.doesNotMatch(html, /name="actual-outcome"[^>]*checked/);
+  ui.confirm(); assert.deepEqual(ui.saved(), state);
+  ui.fire('npc-options', 'change', { name: 'actual-outcome', value: '23' });
+  ui.confirm(); assert.equal(ui.saved().stock.blue, 450); assert.equal(ui.saved().round, 4);
+  ui.fire('undo', 'click'); ui.choose('dialogue', 'brock'); ui.fire('add-choice', 'click');
+  const id = /data-claim="([^"]+)"/.exec(ui.element('temp-choices').innerHTML)[1];
+  ui.fire('temp-choices', 'click', { closest: () => ({ dataset: { claim: id } }) });
+  const results = ui.element('temp-choices').innerHTML;
+  assert.doesNotMatch(results, /<select/);
+  assert.equal([...results.matchAll(/data-result=/g)].length, 24);
+  ui.fire('temp-choices', 'click', { closest: () => ({ dataset: { result: id, index: '0' } }) });
+  assert.equal(ui.saved().stock.red, 30); assert.equal(ui.saved().round, 4);
+  assert.doesNotMatch(fs.readFileSync(require.resolve('./dist/app.js'), 'utf8'), /<select/);
+  const page = fs.readFileSync(require.resolve('./dist/index.html'), 'utf8');
+  assert.equal([...page.matchAll(/<select/g)].length, 1); assert.match(page, /<select id="round"/);
+});
+test('dialogue outcomes use color rows with original indices, expanded references and no repeated summary', () => {
+  const names = { red: '红色', green: '绿色', blue: '蓝色', yellow: '黄色' };
+  for (const event of D.events) {
+    const ui = appUi(); ui.group('random');
+    ui.fire('npc-list', 'change', { id: 'reference-current', checked: false });
+    ui.choose('dialogue', event.id);
+    const html = ui.element('npc-options').innerHTML, outcomes = D.outcomes(event.id);
+    assert.match(html, /<details class="dialogue-detail" open><summary>游戏选项与奖励资料<\/summary>/);
+    assert.ok(html.includes(event.question));
+    assert.deepEqual([...html.matchAll(/class="reward-row-color ([^"]+)">([^<]+)</g)].map(match => match[2]), D.prizes[event.id].colors.map(color => names[color]));
+    const options = [...html.matchAll(/name="actual-outcome" value="(\d+)" [^>]*aria-label="([^"]+)"><span>([^<]+)<\/span>/g)];
+    assert.equal(options.length, outcomes.length); assert.doesNotMatch(html, /name="actual-outcome"[^>]*checked/);
+    options.forEach((match, i) => {
+      const amount = Math.max(...Object.values(outcomes[i]));
+      assert.equal(Number(match[1]), i); assert.equal(match[3], String(amount));
+      const color = P.colors.find(c => outcomes[i][c] > 0);
+      assert.equal(match[2], names[color] + ' +' + amount);
+    });
+    assert.equal(ui.element('choice-preview').innerHTML, '');
+    ui.fire('add-choice', 'click');
+    const id = /data-claim="([^"]+)"/.exec(ui.element('temp-choices').innerHTML)[1];
+    assert.match(ui.element('temp-choices').innerHTML, /<details class="dialogue-detail" open><summary>游戏选项与奖励资料<\/summary>/);
+    ui.fire('temp-choices', 'click', { closest: () => ({ dataset: { claim: id } }) });
+    const results = ui.element('temp-choices').innerHTML;
+    assert.equal([...results.matchAll(/class="reward-row"/g)].length, D.prizes[event.id].colors.length);
+    assert.deepEqual([...results.matchAll(/data-index="(\d+)"/g)].map(match => Number(match[1])), outcomes.map((_, i) => i));
+    assert.equal(ui.saved().ledger.length, 0); assert.deepEqual(ui.saved().stock, P.vector());
+  }
+});
+
+test('Oak keeps the original two simultaneous-reward choices, summary and comparison controls', () => {
+  const ui = appUi(); ui.group('random'); ui.choose('oak');
+  const html = ui.element('npc-options').innerHTML;
+  assert.match(html, /class="option-radios"/); assert.doesNotMatch(html, /reward-rows|游戏选项与奖励资料/);
+  assert.match(html, /<span>四色各 30<\/span>/); assert.match(html, /<span>四色各 400<\/span>/);
+  assert.match(ui.element('choice-preview').innerHTML, /四色同时各30或400/);
+  ui.fire('add-choice', 'click');
+  const id = /data-claim="([^"]+)"/.exec(ui.element('temp-choices').innerHTML)[1];
+  ui.fire('temp-choices', 'click', { closest: () => ({ dataset: { claim: id } }) });
+  const results = ui.element('temp-choices').innerHTML;
+  assert.doesNotMatch(results, /reward-rows|游戏选项与奖励资料/);
+  assert.match(results, /class="outcome-buttons"/); assert.match(results, /确认 四色各 400/);
+  ui.fire('temp-choices', 'click', { closest: () => ({ dataset: { result: id, index: '1' } }) });
+  assert.deepEqual(ui.saved().stock, P.vector(400)); assert.equal(ui.saved().round, 2);
+});
+
+test('first-round blue Kukui is preview-only, restores after undo and leaves old receipts intact', () => {
+  const ui = appUi();
+  assert.match(ui.element('npc-list').innerHTML, /data-npc="kukui" data-choice="" aria-pressed="true"/);
+  assert.match(ui.element('npc-options').innerHTML, /value="blue" checked/);
+  assert.equal(ui.saved().ledger.length, 0); assert.deepEqual(ui.saved().stock, P.vector());
+  ui.confirm(); assert.equal(ui.saved().candidates.at(-1).type, 'kukui'); assert.equal(ui.saved().stock.blue, 315);
+  assert.equal(ui.saved().round, 2); assert.equal(ui.element('round-progress').value, 2);
+  ui.fire('undo', 'click');
+  assert.match(ui.element('npc-list').innerHTML, /data-npc="kukui" data-choice="" aria-pressed="true"/);
+  assert.deepEqual(ui.saved().stock, P.vector()); assert.equal(ui.element('round-progress').value, 1);
+  const old = P.defaults(); P.recordChoice(old, npc('principal')); old.round = 1;
+  const loaded = appUi(old); assert.deepEqual(loaded.saved(), old);
+  assert.equal(loaded.element('confirm-npc').disabled, true);
+});
+test('choosing or reselecting items preserves sibling section state and actual outcomes in both story tabs', () => {
+  const state = P.defaults(); state.round = 3;
+  const ui = appUi(state);
+  for (const [group, type, choice, section, sibling] of [
+    ['fixed', 'story', 'story-common-0', '1', '0'],
+    ['random', 'dialogue', 'gloria', '3', '2']
+  ]) {
+    ui.group(group); ui.choose(type, choice, section);
+    assert.match(ui.element('npc-list').innerHTML, new RegExp('data-section="' + section + '" open>'));
+    assert.match(ui.element('npc-list').innerHTML, new RegExp('data-section="' + sibling + '" open>'));
+    ui.fire('npc-list', 'toggle', { isConnected: true, matches: () => true, dataset: { section: sibling }, open: false });
+    ui.choose(type, choice, section);
+    assert.match(ui.element('npc-list').innerHTML, new RegExp('data-section="' + sibling + '"\\s*>'));
+    if (type === 'dialogue') {
+      ui.fire('npc-options', 'change', { name: 'actual-outcome', value: '1' });
+      ui.fire('npc-list', 'click', { closest: () => ({ dataset: { npc: type, choice }, getAttribute: () => 'true' }) });
+      assert.match(ui.element('choice-preview').innerHTML, /蓝色 \+450/);
+      ui.fire('add-choice', 'click');
+      assert.match(ui.element('temp-choices').innerHTML, /蓝色 \+450/);
+    }
+    ui.choose(group === 'fixed' ? 'blue' : 'dialogue', group === 'fixed' ? '' : 'brock', section);
+    assert.match(ui.element('npc-list').innerHTML, new RegExp('data-section="' + sibling + '"\\s*>'));
+  }
+  assert.equal(ui.saved().ledger.length, 0); assert.deepEqual(ui.saved().stock, P.vector());
+});
+
+test('successful direct and comparison confirmations restore both tabs open and current-round filtering', () => {
+  for (const comparison of [false, true]) for (const group of ['fixed', 'random']) {
+    const state = P.defaults(); state.round = 3;
+    const ui = appUi(state); ui.group('random');
+    assert.match(ui.element('npc-list').innerHTML, /id="reference-current" type="checkbox" checked/);
+    ui.fire('npc-list', 'change', { id: 'reference-current', checked: false });
+    ui.choose('dialogue', 'gloria', '3'); ui.confirm();
+    assert.equal(ui.saved().ledger.length, 0);
+    assert.match(ui.element('npc-list').innerHTML, /data-section="3" open>/);
+    assert.match(ui.element('npc-list').innerHTML, /data-section="2" open>/);
+    assert.doesNotMatch(ui.element('npc-list').innerHTML, /id="reference-current" type="checkbox" checked/);
+    ui.group(group);
+    ui.choose(group === 'fixed' ? 'blue' : 'oak', '', group === 'fixed' ? '0' : '3');
+    if (group === 'random') ui.fire('npc-options', 'change', { name: 'actual-outcome', value: '0' });
+    if (comparison) {
+      ui.fire('add-choice', 'click');
+      const id = /data-claim="([^"]+)"/.exec(ui.element('temp-choices').innerHTML)[1];
+      ui.fire('temp-choices', 'click', { closest: () => ({ dataset: { claim: id } }) });
+    } else ui.confirm();
+    assert.equal(ui.saved().round, 4); assert.deepEqual(ui.saved().stock, P.vector(group === 'fixed' ? 400 : 30));
+    for (const tab of [group, group === 'fixed' ? 'random' : 'fixed']) {
+      ui.group(tab);
+      const html = ui.element('npc-list').innerHTML;
+      assert.match(html, /id="reference-current" type="checkbox" checked/);
+      assert.equal([...html.matchAll(/data-section="\d" open>/g)].length, 2);
+      assert.doesNotMatch(html, /aria-pressed="true"/);
+      assert.equal(ui.element('confirm-npc').disabled, true);
+    }
+  }
+});
+
 console.log(`${count} tests passed`);
